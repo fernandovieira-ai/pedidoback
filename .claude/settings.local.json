@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(node:*)",
+      "Bash(npm install:*)",
+      "Bash(Get-Process -Name node -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object Id, ProcessName, StartTime)",
+      "Bash(Format-Table:*)",
+      "Bash(tasklist:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd.exe /c \"taskkill /F /PID 83880\")",
+      "Bash(kill:*)",
+      "Bash(cmd.exe /c \"taskkill //F //PID 83880\")",
+      "Bash(pm2 restart:*)",
+      "Bash(powershell.exe -Command \"Stop-Process -Id 83880 -Force\")",
+      "Bash(powershell.exe -Command \"Stop-Process -Id 34400 -Force\")",
+      "Bash(powershell.exe -Command \"Stop-Process -Id 46876 -Force\")",
+      "Bash(powershell.exe -Command \"Stop-Process -Id 40628 -Force\")",
+      "Bash(powershell.exe -Command \"Stop-Process -Id 13160 -Force\")",
+      "Bash(findstr:*)",
+      "Bash(npx expo start --clear)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
