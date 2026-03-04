@@ -33,7 +33,7 @@ const SERVERS = {
 
   // 🚀 PRODUÇÃO - Servidor Railway (Cloud)
   // Backend hospedado no Railway com HTTPS automático
-  production: "https://backeend-pedido-production-25a7.up.railway.app/api",
+  production: "https://pedidoback-production.up.railway.app/api",
 };
 
 // ============================================
@@ -44,7 +44,7 @@ const SERVERS = {
 // 🔧 ALTERE AQUI para mudar entre local e Railway:
 // "network" = Backend local (192.168.100.12:3001)
 // "production" = Backend Railway (cloud)
-const MODO_ATUAL: "local" | "network" | "production" = "network";
+const MODO_ATUAL: "local" | "network" | "production" = "production";
 
 // 💡 GUIA RÁPIDO DE USO:
 //
