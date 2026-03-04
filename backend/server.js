@@ -236,11 +236,11 @@ app.post("/api/clientes/pesquisar", async (req, res) => {
       });
     }
 
-    // 1. Busca o parâmetro cod_parametro = 1 (filtro por vendedor)
+    // 1. Busca o parâmetro cod_parametro = 11 (filtro por vendedor na pesquisa de clientes)
     const parametroQuery = `
-      SELECT val_parametro 
-      FROM ${schema}.tab_parametro 
-      WHERE cod_parametro = 1
+      SELECT val_parametro
+      FROM ${schema}.tab_parametro
+      WHERE cod_parametro = 11
       LIMIT 1
     `;
     const parametroResult = await pool.query(parametroQuery);
@@ -1135,34 +1135,78 @@ app.post("/api/pedidos/listar", async (req, res) => {
       return `${ano}-${mes}-${dia}`;
     };
 
-    // 1. Busca o parâmetro cod_parametro = 1 (filtro por vendedor)
-    const parametroQuery = `
-      SELECT val_parametro 
-      FROM ${schema}.tab_parametro 
-      WHERE cod_parametro = 1
-      LIMIT 1
-    `;
-    const parametroResult = await pool.query(parametroQuery);
-    const filtrarPorVendedor =
-      parametroResult.rows.length > 0 &&
-      parametroResult.rows[0].val_parametro === "S";
+    // 1. Verifica se o usuário é administrador
+    let isAdmin = false;
+    let codUsuario = null;
 
-    let codVendedor = null;
-
-    // 2. Se filtro ativo e usuário informado, busca cod_vendedor do usuário
-    if (filtrarPorVendedor && usuario) {
+    if (usuario) {
+      // Busca o cod_usuario do operador
       const usuarioQuery = `
-        SELECT cod_vendedor 
-        FROM ${schema}.tab_usuario 
+        SELECT cod_usuario
+        FROM ${schema}.tab_usuario
         WHERE nom_operador = $1 AND ind_ativo = 'S'
         LIMIT 1
       `;
       const usuarioResult = await pool.query(usuarioQuery, [usuario]);
 
       if (usuarioResult.rows.length > 0) {
-        codVendedor = usuarioResult.rows[0].cod_vendedor;
+        codUsuario = usuarioResult.rows[0].cod_usuario;
+
+        // Verifica se está na tabela de administradores
+        const adminQuery = `
+          SELECT cod_usuario
+          FROM ${schema}.tab_usuario_adm
+          WHERE cod_usuario = $1
+          LIMIT 1
+        `;
+        const adminResult = await pool.query(adminQuery, [codUsuario]);
+        isAdmin = adminResult.rows.length > 0;
       }
     }
+
+    console.log("=== LISTAR PEDIDOS ===");
+    console.log("Usuário:", usuario);
+    console.log("Código do usuário:", codUsuario);
+    console.log("É administrador?", isAdmin);
+
+    // 2. Se NÃO for admin, verifica o parâmetro de filtro por vendedor
+    let codVendedor = null;
+    let aplicarFiltroPorOperador = false;
+
+    if (!isAdmin && usuario) {
+      // Busca o parâmetro cod_parametro = 1 (filtro por vendedor)
+      const parametroQuery = `
+        SELECT val_parametro
+        FROM ${schema}.tab_parametro
+        WHERE cod_parametro = 1
+        LIMIT 1
+      `;
+      const parametroResult = await pool.query(parametroQuery);
+      const filtrarPorVendedor =
+        parametroResult.rows.length > 0 &&
+        parametroResult.rows[0].val_parametro === "S";
+
+      console.log("Parâmetro 1 (filtrar por vendedor)?", filtrarPorVendedor);
+
+      // Se filtro ativo, busca cod_vendedor do usuário
+      if (filtrarPorVendedor && codUsuario) {
+        const vendedorQuery = `
+          SELECT cod_vendedor
+          FROM ${schema}.tab_usuario
+          WHERE cod_usuario = $1
+          LIMIT 1
+        `;
+        const vendedorResult = await pool.query(vendedorQuery, [codUsuario]);
+
+        if (vendedorResult.rows.length > 0) {
+          codVendedor = vendedorResult.rows[0].cod_vendedor;
+          aplicarFiltroPorOperador = true;
+          console.log("Código do vendedor:", codVendedor);
+        }
+      }
+    }
+
+    console.log("Aplicar filtro por operador?", aplicarFiltroPorOperador);
 
     // Monta a query base
     let query = `
@@ -1186,11 +1230,16 @@ app.post("/api/pedidos/listar", async (req, res) => {
     const params = [cod_empresa];
     let paramIndex = 2;
 
-    // Filtro por vendedor (se ativo e cod_vendedor encontrado)
-    if (filtrarPorVendedor && codVendedor) {
+    // Filtro por operador (apenas se não for admin e filtro estiver ativo)
+    if (aplicarFiltroPorOperador && codVendedor) {
       query += ` AND p.cod_vendedor = $${paramIndex}`;
       params.push(codVendedor);
       paramIndex++;
+      console.log("✅ Filtro por vendedor aplicado na query");
+    } else if (isAdmin) {
+      console.log("✅ Admin: visualizando TODOS os pedidos");
+    } else {
+      console.log("✅ Usuário comum: visualizando todos os pedidos (parâmetro desativado)");
     }
 
     // Filtro por cliente
