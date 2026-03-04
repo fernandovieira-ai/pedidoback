@@ -39,6 +39,15 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// Servir arquivos estáticos da pasta logos
+const path = require("path");
+const fs = require("fs");
+const logosDir = path.join(__dirname, "public", "logos");
+if (!fs.existsSync(logosDir)) {
+  fs.mkdirSync(logosDir, { recursive: true });
+}
+app.use("/logos", express.static(path.join(__dirname, "public", "logos")));
+
 // ===============================================
 // ROTAS DE AUTENTICAÇÃO
 // ===============================================
@@ -62,7 +71,7 @@ app.post("/api/auth/validate-cnpj", async (req, res) => {
 
     // Busca o CNPJ na tabela tab_base
     const query = `
-      SELECT num_cnpj, nom_empresa, nom_schema as schema
+      SELECT num_cnpj, nom_empresa, nom_schema as schema, logo_url
       FROM tab_base
       WHERE num_cnpj = $1
       LIMIT 1
@@ -85,6 +94,8 @@ app.post("/api/auth/validate-cnpj", async (req, res) => {
       data: {
         cnpj: empresa.num_cnpj,
         schema: empresa.schema,
+        logo_url: empresa.logo_url,
+        nome_empresa: empresa.nom_empresa,
       },
     });
   } catch (error) {
@@ -155,7 +166,7 @@ app.post("/api/auth/login", async (req, res) => {
       });
     }
 
-    console.log("Login bem-sucedido!");
+    console.log("Login bem-sucesso!");
 
     // Executa a procedure sp_cadastro_app para registrar o acesso
     try {
@@ -167,13 +178,24 @@ app.post("/api/auth/login", async (req, res) => {
       // Log do erro, mas não interrompe o login
       console.error(
         `⚠️ Erro ao executar sp_cadastro_app (não crítico):`,
-        procError.message
+        procError.message,
       );
     }
 
+    // Busca logo_url e nome_empresa da tab_base
+    const logoQuery = `
+      SELECT logo_url, nom_empresa
+      FROM tab_base
+      WHERE nom_schema = $1
+      LIMIT 1
+    `;
+    const logoResult = await pool.query(logoQuery, [schema]);
+    const logoData =
+      logoResult.rows.length > 0 ? logoResult.rows[0] : { logo_url: null, nom_empresa: null };
+
     // Gera um token simples (em produção, use JWT)
     const token = Buffer.from(`${schema}:${usuario}:${Date.now()}`).toString(
-      "base64"
+      "base64",
     );
 
     res.json({
@@ -181,9 +203,12 @@ app.post("/api/auth/login", async (req, res) => {
       message: "Login realizado com sucesso",
       data: {
         usuario: user.nom_operador,
+        cod_usuario: user.cod_usuario,
         cnpj: cnpj,
         schema: schema,
         token: token,
+        logo_url: logoData.logo_url,
+        nome_empresa: logoData.nom_empresa,
       },
     });
   } catch (error) {
@@ -302,7 +327,7 @@ app.post("/api/clientes/pesquisar", async (req, res) => {
       "Tipo:",
       termo && /^\d+$/.test(termo.trim())
         ? "NUMÉRICO (prioriza código)"
-        : "TEXTO (busca nome)"
+        : "TEXTO (busca nome)",
     );
     console.log("Filtrar por vendedor?", filtrarPorVendedor);
     console.log("Código do vendedor:", codVendedor || "N/A");
@@ -315,7 +340,7 @@ app.post("/api/clientes/pesquisar", async (req, res) => {
     if (result.rows.length > 0) {
       console.log(
         "Primeiros 3 clientes:",
-        JSON.stringify(result.rows.slice(0, 3), null, 2)
+        JSON.stringify(result.rows.slice(0, 3), null, 2),
       );
     }
 
@@ -377,6 +402,64 @@ app.post("/api/clientes/pesquisar", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Erro ao pesquisar clientes",
+    });
+  }
+});
+
+// POST /api/clientes/enderecos
+app.post("/api/clientes/enderecos", async (req, res) => {
+  try {
+    const { schema, cod_pessoa } = req.body;
+
+    if (!schema) {
+      return res.status(400).json({
+        success: false,
+        message: "Schema não informado",
+      });
+    }
+
+    if (!cod_pessoa) {
+      return res.status(400).json({
+        success: false,
+        message: "Código da pessoa não informado",
+      });
+    }
+
+    // Busca endereços do cliente
+    const query = `
+      SELECT 
+        seq_endereco,
+        cod_pessoa,
+        des_logradouro,
+        des_complemento,
+        nom_cidade,
+        nom_bairro,
+        num_cep,
+        num_caixa_postal
+      FROM ${schema}.tab_pessoa_endereco
+      WHERE cod_pessoa = $1
+      ORDER BY seq_endereco
+    `;
+
+    const result = await pool.query(query, [cod_pessoa]);
+
+    console.log(
+      `✅ Endereços encontrados para cliente ${cod_pessoa}: ${result.rows.length}`,
+    );
+
+    res.json({
+      success: true,
+      message:
+        result.rows.length > 0
+          ? `${result.rows.length} endereço(s) encontrado(s)`
+          : "Nenhum endereço encontrado",
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error("Erro ao buscar endereços do cliente:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erro ao buscar endereços do cliente",
     });
   }
 });
@@ -621,6 +704,138 @@ app.get("/api/parametros/preco", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Erro ao buscar parâmetros de preço",
+      error: error.message,
+    });
+  }
+});
+
+// GET /api/parametros/itens-iniciais
+app.get("/api/parametros/itens-iniciais", async (req, res) => {
+  try {
+    const { schema } = req.query;
+
+    if (!schema) {
+      return res.status(400).json({
+        success: false,
+        message: "Schema não informado",
+      });
+    }
+
+    // Busca parâmetro 8 (quantidade de itens iniciais)
+    const query = `
+      SELECT val_parametro
+      FROM ${schema}.tab_parametro
+      WHERE cod_parametro = 8
+    `;
+
+    const result = await pool.query(query);
+
+    let quantidadeItens = null;
+    if (result.rows.length > 0 && result.rows[0].val_parametro) {
+      quantidadeItens = parseInt(result.rows[0].val_parametro, 10);
+    }
+
+    res.json({
+      success: true,
+      message: quantidadeItens
+        ? `Parâmetro encontrado: ${quantidadeItens} itens`
+        : "Parâmetro não configurado",
+      data: {
+        quantidade_itens_iniciais: quantidadeItens,
+      },
+    });
+  } catch (error) {
+    console.error("Erro ao buscar parâmetro de itens iniciais:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erro ao buscar parâmetro de itens iniciais",
+      error: error.message,
+    });
+  }
+});
+
+// ===============================================
+// ROTAS DE TIPOS DE COBRANÇA
+// ===============================================
+
+// GET /api/tipos-cobranca/listar
+app.get("/api/tipos-cobranca/listar", async (req, res) => {
+  try {
+    const { schema } = req.query;
+
+    if (!schema) {
+      return res.status(400).json({
+        success: false,
+        message: "Schema não informado",
+      });
+    }
+
+    const query = `
+      SELECT cod_tipo_cobranca, des_tipo_cobranca
+      FROM ${schema}.tab_tipo_cobranca
+      ORDER BY des_tipo_cobranca
+    `;
+
+    const result = await pool.query(query);
+
+    res.json({
+      success: true,
+      message:
+        result.rows.length > 0
+          ? "Tipos de cobrança encontrados"
+          : "Nenhum tipo de cobrança encontrado",
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error("Erro ao listar tipos de cobrança:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erro ao listar tipos de cobrança",
+      error: error.message,
+    });
+  }
+});
+
+// GET /api/parametros/tipo-cobranca-padrao
+app.get("/api/parametros/tipo-cobranca-padrao", async (req, res) => {
+  try {
+    const { schema } = req.query;
+
+    if (!schema) {
+      return res.status(400).json({
+        success: false,
+        message: "Schema não informado",
+      });
+    }
+
+    // Busca parâmetro 9 (tipo de cobrança padrão)
+    const query = `
+      SELECT val_parametro
+      FROM ${schema}.tab_parametro
+      WHERE cod_parametro = 9
+    `;
+
+    const result = await pool.query(query);
+
+    let codTipoCobranca = null;
+    if (result.rows.length > 0 && result.rows[0].val_parametro) {
+      codTipoCobranca = parseInt(result.rows[0].val_parametro, 10);
+    }
+
+    res.json({
+      success: true,
+      message: codTipoCobranca
+        ? `Tipo de cobrança padrão: ${codTipoCobranca}`
+        : "Tipo de cobrança padrão não configurado",
+      data: {
+        cod_tipo_cobranca_padrao: codTipoCobranca,
+      },
+    });
+  } catch (error) {
+    console.error("Erro ao buscar tipo de cobrança padrão:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erro ao buscar tipo de cobrança padrão",
       error: error.message,
     });
   }
@@ -896,8 +1111,15 @@ app.get("/api/condicoes-pagamento/ultima-do-cliente", async (req, res) => {
 // POST /api/pedidos/listar
 app.post("/api/pedidos/listar", async (req, res) => {
   try {
-    const { schema, cod_empresa, cod_cliente, data_inicio, data_fim, usuario, apenas_pendentes } =
-      req.body;
+    const {
+      schema,
+      cod_empresa,
+      cod_cliente,
+      data_inicio,
+      data_fim,
+      usuario,
+      apenas_pendentes,
+    } = req.body;
 
     if (!schema || !cod_empresa) {
       return res.status(400).json({
@@ -1037,6 +1259,8 @@ app.post("/api/pedidos/criar", async (req, res) => {
       cod_empresa,
       usuario,
       cliente,
+      seq_endereco,
+      cod_tipo_cobranca,
       dataEntrega,
       itens,
       subtotal,
@@ -1108,6 +1332,8 @@ app.post("/api/pedidos/criar", async (req, res) => {
         cod_empresa,
         cod_cliente,
         cod_vendedor,
+        seq_endereco,
+        cod_tipo_cobranca,
         dat_pedido,
         dat_entrega,
         val_subtotal,
@@ -1119,7 +1345,7 @@ app.post("/api/pedidos/criar", async (req, res) => {
         cod_condicao_pagamento,
         nom_usuario,
         ind_sincronizado
-      ) VALUES ($1, $2, $3, $4, CURRENT_DATE, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'N')
+      ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'N')
     `;
 
     await client.query(insertPedidoQuery, [
@@ -1127,6 +1353,8 @@ app.post("/api/pedidos/criar", async (req, res) => {
       cod_empresa,
       cliente.cod_pessoa,
       cod_vendedor,
+      seq_endereco || null,
+      cod_tipo_cobranca || null,
       converterData(dataEntrega),
       subtotal,
       desconto,
@@ -1184,7 +1412,7 @@ app.post("/api/pedidos/criar", async (req, res) => {
 
       if (isAutomatica) {
         console.log(
-          "Calculando parcelas automaticamente (ind_tipo_condicao = A)..."
+          "Calculando parcelas automaticamente (ind_tipo_condicao = A)...",
         );
 
         // Busca os fluxos da condição de pagamento
@@ -1236,7 +1464,7 @@ app.post("/api/pedidos/criar", async (req, res) => {
               console.log(
                 `💾 Salvando Parcela ${numParcela}:`,
                 `Data: ${dataVencimentoFormatada}`,
-                `Valor: R$ ${valorParcela.toFixed(2)}`
+                `Valor: R$ ${valorParcela.toFixed(2)}`,
               );
 
               await client.query(insertParcelaQuery, [
@@ -1251,7 +1479,7 @@ app.post("/api/pedidos/criar", async (req, res) => {
           }
         } else {
           console.log(
-            "Condição de pagamento automática sem fluxos configurados"
+            "Condição de pagamento automática sem fluxos configurados",
           );
         }
       } else {
@@ -1263,7 +1491,7 @@ app.post("/api/pedidos/criar", async (req, res) => {
 
             if (!dataVenc) {
               throw new Error(
-                `Parcela ${parcela.numero} sem data de vencimento`
+                `Parcela ${parcela.numero} sem data de vencimento`,
               );
             }
 
@@ -1367,6 +1595,8 @@ app.post("/api/pedidos/detalhes", async (req, res) => {
         p.cod_condicao_pagamento,
         cp.des_condicao_pagamento,
         cp.ind_tipo_condicao,
+        p.seq_endereco,
+        p.cod_tipo_cobranca,
         COALESCE(p.ind_sincronizado, 'N') as ind_sincronizado
       FROM ${schema}.tab_pedido_app p
       LEFT JOIN ${schema}.tab_pessoa pe ON p.cod_cliente = pe.cod_pessoa
@@ -1421,14 +1651,14 @@ app.post("/api/pedidos/detalhes", async (req, res) => {
     `;
 
     console.log(
-      `🔍 Buscando parcelas - Schema: ${schema}, Pedido: ${seq_pedido}`
+      `🔍 Buscando parcelas - Schema: ${schema}, Pedido: ${seq_pedido}`,
     );
     const parcelasResult = await pool.query(parcelasQuery, [seq_pedido]);
 
     // Log para debug
     console.log(
       `📋 Parcelas encontradas (${parcelasResult.rows.length}):`,
-      JSON.stringify(parcelasResult.rows, null, 2)
+      JSON.stringify(parcelasResult.rows, null, 2),
     );
 
     // Montar resposta
@@ -1531,6 +1761,8 @@ app.post("/api/pedidos/atualizar", async (req, res) => {
       cod_empresa,
       usuario,
       cliente,
+      seq_endereco,
+      cod_tipo_cobranca,
       dataEntrega,
       itens,
       subtotal,
@@ -1598,23 +1830,27 @@ app.post("/api/pedidos/atualizar", async (req, res) => {
       UPDATE ${schema}.tab_pedido_app SET
         cod_cliente = $1,
         cod_vendedor = $2,
-        dat_entrega = $3,
-        val_subtotal = $4,
-        val_desconto = $5,
-        val_acrescimo = $6,
-        val_frete = $7,
-        val_total = $8,
-        des_observacao = $9,
-        cod_condicao_pagamento = $10,
-        usuario_alteracao = $11,
+        seq_endereco = $3,
+        cod_tipo_cobranca = $4,
+        dat_entrega = $5,
+        val_subtotal = $6,
+        val_desconto = $7,
+        val_acrescimo = $8,
+        val_frete = $9,
+        val_total = $10,
+        des_observacao = $11,
+        cod_condicao_pagamento = $12,
+        usuario_alteracao = $13,
         dat_alteracao = CURRENT_TIMESTAMP,
         ind_sincronizado = 'N'
-      WHERE seq_pedido = $12
+      WHERE seq_pedido = $14
     `;
 
     await client.query(updatePedidoQuery, [
       cliente.cod_pessoa,
       cod_vendedor,
+      seq_endereco || null,
+      cod_tipo_cobranca || null,
       converterData(dataEntrega),
       subtotal,
       desconto,
@@ -1685,7 +1921,7 @@ app.post("/api/pedidos/atualizar", async (req, res) => {
 
       if (isAutomatica) {
         console.log(
-          "Calculando parcelas automaticamente (ind_tipo_condicao = A)..."
+          "Calculando parcelas automaticamente (ind_tipo_condicao = A)...",
         );
 
         // Busca os fluxos da condição de pagamento
@@ -1737,7 +1973,7 @@ app.post("/api/pedidos/atualizar", async (req, res) => {
               console.log(
                 `💾 Salvando Parcela ${numParcela}:`,
                 `Data: ${dataVencimentoFormatada}`,
-                `Valor: R$ ${valorParcela.toFixed(2)}`
+                `Valor: R$ ${valorParcela.toFixed(2)}`,
               );
 
               await client.query(insertParcelaQuery, [
@@ -1752,7 +1988,7 @@ app.post("/api/pedidos/atualizar", async (req, res) => {
           }
         } else {
           console.log(
-            "Condição de pagamento automática sem fluxos configurados"
+            "Condição de pagamento automática sem fluxos configurados",
           );
         }
       } else {
@@ -1764,7 +2000,7 @@ app.post("/api/pedidos/atualizar", async (req, res) => {
 
             if (!dataVenc) {
               throw new Error(
-                `Parcela ${parcela.numero} sem data de vencimento`
+                `Parcela ${parcela.numero} sem data de vencimento`,
               );
             }
 
@@ -1966,7 +2202,7 @@ app.post("/api/vendas/ultima", async (req, res) => {
       params.push(codVendedor);
       paramIndex++;
       console.log(
-        `✅ Aplicado filtro por vendedor: cod_vendedor = ${codVendedor}`
+        `✅ Aplicado filtro por vendedor: cod_vendedor = ${codVendedor}`,
       );
     } else {
       console.log("⚠️ Filtro por vendedor NÃO aplicado");
@@ -1978,7 +2214,7 @@ app.post("/api/vendas/ultima", async (req, res) => {
       params.push(cod_cliente);
       paramIndex++;
       console.log(
-        `✅ Aplicado filtro por cliente: cod_cliente = ${cod_cliente}`
+        `✅ Aplicado filtro por cliente: cod_cliente = ${cod_cliente}`,
       );
     } else {
       console.log("⚠️ Filtro por cliente NÃO informado");
@@ -1992,17 +2228,17 @@ app.post("/api/vendas/ultima", async (req, res) => {
     const notaResult = await pool.query(notaQuery, params);
 
     console.log(
-      `🔍 Resultado da query: ${notaResult.rows.length} nota(s) encontrada(s)`
+      `🔍 Resultado da query: ${notaResult.rows.length} nota(s) encontrada(s)`,
     );
 
     if (notaResult.rows.length === 0) {
       console.log("❌ Nenhuma nota fiscal encontrada com os filtros aplicados");
       console.log("💡 Sugestão: Verifique se:");
       console.log(
-        `   - Existe nota fiscal para o cliente ${cod_cliente || "qualquer"}`
+        `   - Existe nota fiscal para o cliente ${cod_cliente || "qualquer"}`,
       );
       console.log(
-        `   - O vendedor ${codVendedor || "N/A"} tem vendas para este cliente`
+        `   - O vendedor ${codVendedor || "N/A"} tem vendas para este cliente`,
       );
       console.log(`   - As notas estão na tabela ${schema}.tab_nota_fiscal`);
 
@@ -2026,29 +2262,37 @@ app.post("/api/vendas/ultima", async (req, res) => {
     // 4. Busca os itens da nota fiscal
     const itensQuery = `
       SELECT
-        i.seq_nota,
-        i.cod_item,
-        item.des_item,
-        item.des_unidade,
-        i.cod_almoxarifado,
-        i.cod_natureza_operacao,
-        i.qtd_item,
-        i.val_unitario,
-        i.val_total_item
-      FROM ${schema}.tab_item_nfs i
-      LEFT JOIN ${schema}.tab_item item ON i.cod_item = item.cod_item
-      WHERE i.seq_nota = $1
-      ORDER BY i.cod_item
+        seq_nota,
+        seq_item_nota,
+        cod_item,
+        des_item,
+        des_unidade,
+        cod_almoxarifado,
+        cod_natureza_operacao,
+        qtd_item,
+        val_unitario,
+        val_total_item
+      FROM ${schema}.tab_item_nfs
+      WHERE seq_nota = $1
+      ORDER BY seq_item_nota
     `;
 
     const itensResult = await pool.query(itensQuery, [nota.seq_nota]);
+
+    console.log(
+      `Itens com nomes encontrados:`,
+      itensResult.rows.map((r) => ({
+        cod_item: r.cod_item,
+        des_item: r.des_item,
+      })),
+    );
 
     console.log(`Itens encontrados: ${itensResult.rows.length}`);
 
     // 5. Calcula o total da nota
     const totalNota = itensResult.rows.reduce(
       (acc, item) => acc + parseFloat(item.val_total_item || 0),
-      0
+      0,
     );
 
     // 6. Monta a resposta
@@ -2077,6 +2321,189 @@ app.post("/api/vendas/ultima", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Erro ao buscar última venda",
+      error: error.message,
+    });
+  }
+});
+
+// ===============================================
+// ROTAS DE LOGO
+// ===============================================
+
+// POST /api/logo/verificar-permissao
+app.post("/api/logo/verificar-permissao", async (req, res) => {
+  try {
+    const { schema, cod_usuario } = req.body;
+
+    if (!schema || !cod_usuario) {
+      return res.status(400).json({
+        success: false,
+        message: "Schema e código do usuário são obrigatórios",
+      });
+    }
+
+    console.log("=== VERIFICAR PERMISSÃO LOGO ===");
+    console.log("Schema:", schema);
+    console.log("Usuário:", cod_usuario);
+
+    // Busca o parâmetro 10 (usuários autorizados a alterar logo)
+    const parametroQuery = `
+      SELECT val_parametro
+      FROM ${schema}.tab_parametro
+      WHERE cod_parametro = 10
+      LIMIT 1
+    `;
+
+    const parametroResult = await pool.query(parametroQuery);
+
+    if (parametroResult.rows.length === 0) {
+      console.log("Parâmetro 10 não configurado");
+      return res.json({
+        success: true,
+        message: "Parâmetro de permissão não configurado",
+        data: {
+          tem_permissao: false,
+        },
+      });
+    }
+
+    const usuariosAutorizados = parametroResult.rows[0].val_parametro || "";
+    console.log("Usuários autorizados:", usuariosAutorizados);
+
+    // Verifica se o cod_usuario está na lista de autorizados
+    // Converte cod_usuario para string para comparação
+    const codUsuarioStr = String(cod_usuario).trim().toUpperCase();
+    const listaUsuarios = usuariosAutorizados
+      .split(",")
+      .map((u) => u.trim().toUpperCase());
+    const temPermissao = listaUsuarios.includes(codUsuarioStr);
+
+    console.log("Tem permissão?", temPermissao);
+
+    res.json({
+      success: true,
+      message: temPermissao
+        ? "Usuário autorizado"
+        : "Usuário não autorizado",
+      data: {
+        tem_permissao: temPermissao,
+        cod_usuario_autorizado: temPermissao ? cod_usuario : null,
+      },
+    });
+  } catch (error) {
+    console.error("Erro ao verificar permissão:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erro ao verificar permissão",
+      error: error.message,
+    });
+  }
+});
+
+// POST /api/logo/upload
+app.post("/api/logo/upload", async (req, res) => {
+  try {
+    const multer = require("multer");
+    const path = require("path");
+
+    // Configurar storage do multer
+    const storage = multer.diskStorage({
+      destination: (req, file, cb) => {
+        const logosDir = path.join(__dirname, "public", "logos");
+        cb(null, logosDir);
+      },
+      filename: (req, file, cb) => {
+        const schema = req.body.schema;
+        const timestamp = Date.now();
+        const ext = path.extname(file.originalname);
+        cb(null, `${schema}_logo_${timestamp}${ext}`);
+      },
+    });
+
+    const upload = multer({
+      storage: storage,
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+      fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png/;
+        const extname = allowedTypes.test(
+          path.extname(file.originalname).toLowerCase(),
+        );
+        const mimetype = allowedTypes.test(file.mimetype);
+
+        if (mimetype && extname) {
+          return cb(null, true);
+        } else {
+          cb(new Error("Apenas imagens PNG e JPEG são permitidas!"));
+        }
+      },
+    }).single("logo");
+
+    upload(req, res, async (err) => {
+      if (err) {
+        console.error("Erro no upload:", err);
+        return res.status(400).json({
+          success: false,
+          message: err.message || "Erro ao fazer upload",
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: "Nenhum arquivo foi enviado",
+        });
+      }
+
+      const { schema } = req.body;
+
+      if (!schema) {
+        return res.status(400).json({
+          success: false,
+          message: "Schema não informado",
+        });
+      }
+
+      console.log("=== UPLOAD DE LOGO ===");
+      console.log("Schema:", schema);
+      console.log("Arquivo:", req.file.filename);
+
+      // Gerar URL da logo
+      const serverUrl = process.env.SERVER_PUBLIC_URL || `http://localhost:${PORT}`;
+      const logoUrl = `${serverUrl}/logos/${req.file.filename}`;
+
+      console.log("URL da logo:", logoUrl);
+
+      // Atualizar tab_base com a nova logo_url
+      const updateQuery = `
+        UPDATE tab_base
+        SET logo_url = $1
+        WHERE nom_schema = $2
+      `;
+
+      const result = await pool.query(updateQuery, [logoUrl, schema]);
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Schema não encontrado na tab_base",
+        });
+      }
+
+      console.log("✅ Logo atualizada com sucesso no banco");
+
+      res.json({
+        success: true,
+        message: "Logo atualizada com sucesso",
+        data: {
+          logo_url: logoUrl,
+        },
+      });
+    });
+  } catch (error) {
+    console.error("Erro ao fazer upload da logo:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erro ao fazer upload da logo",
       error: error.message,
     });
   }

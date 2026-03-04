@@ -34,7 +34,7 @@ export default function UltimaVendaScreen({
   const [venda, setVenda] = useState<UltimaVenda | null>(null);
   const [loading, setLoading] = useState(false);
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(
-    null
+    null,
   );
 
   // Estados da pesquisa de cliente
@@ -64,7 +64,7 @@ export default function UltimaVendaScreen({
           usuario,
           termoPesquisa.trim(),
           50,
-          0
+          0,
         );
 
         if (resultado.success && resultado.data) {
@@ -123,7 +123,7 @@ export default function UltimaVendaScreen({
           console.log("⚠️ Nenhuma venda encontrada para o cliente");
           Alert.alert(
             "Informação",
-            "Nenhuma venda encontrada para este cliente"
+            "Nenhuma venda encontrada para este cliente",
           );
           setVenda(null);
         }
@@ -249,8 +249,11 @@ export default function UltimaVendaScreen({
                         Itens ({venda.qtd_itens})
                       </Text>
 
-                      {venda.itens.map((item, index) => (
-                        <View key={index} style={styles.itemCard}>
+                      {venda.itens.map((item) => (
+                        <View
+                          key={`${item.seq_nota}-${item.seq_item_nota}`}
+                          style={styles.itemCard}
+                        >
                           <Text style={styles.itemNome}>{item.des_item}</Text>
 
                           <View style={styles.itemRow}>

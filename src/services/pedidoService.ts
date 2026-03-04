@@ -16,6 +16,8 @@ export interface DadosPedido {
   cod_empresa: number;
   usuario: string;
   cliente: Cliente;
+  seq_endereco?: number;
+  cod_tipo_cobranca?: number;
   dataEntrega: string;
   itens: ItemPedido[];
   subtotal: number;
@@ -67,6 +69,8 @@ export interface PedidoDetalhado {
   val_total: number;
   cod_condicao_pagamento: number;
   des_condicao_pagamento: string;
+  seq_endereco?: number;
+  cod_tipo_cobranca?: number;
   itens: ItemPedidoDetalhado[];
   parcelas: Parcela[];
   ind_sincronizado?: string;
@@ -94,7 +98,7 @@ interface ApiResponse<T> {
  * @param dadosPedido Dados completos do pedido
  */
 export const criarPedido = async (
-  dadosPedido: DadosPedido
+  dadosPedido: DadosPedido,
 ): Promise<ApiResponse<{ seq_pedido: number }>> => {
   try {
     const response = await fetch(`${API_BASE_URL}/pedidos/criar`, {
@@ -125,7 +129,7 @@ export const criarPedido = async (
  * @param filtros Filtros para listagem
  */
 export const listarPedidos = async (
-  filtros: FiltrosListagem
+  filtros: FiltrosListagem,
 ): Promise<ApiResponse<PedidoResumo[]>> => {
   try {
     const response = await fetch(`${API_BASE_URL}/pedidos/listar`, {
@@ -159,7 +163,7 @@ export const listarPedidos = async (
  */
 export const obterDetalhesPedido = async (
   schema: string,
-  seq_pedido: number
+  seq_pedido: number,
 ): Promise<ApiResponse<PedidoDetalhado>> => {
   try {
     const response = await fetch(`${API_BASE_URL}/pedidos/detalhes`, {
@@ -195,7 +199,7 @@ export const obterDetalhesPedido = async (
  */
 export const excluirPedido = async (
   schema: string,
-  seq_pedido: number
+  seq_pedido: number,
 ): Promise<ApiResponse<void>> => {
   try {
     const response = await fetch(`${API_BASE_URL}/pedidos/excluir`, {
@@ -227,7 +231,7 @@ export const excluirPedido = async (
  * @param dadosPedido Dados completos do pedido com seq_pedido
  */
 export const atualizarPedido = async (
-  dadosPedido: DadosPedido & { seq_pedido: number }
+  dadosPedido: DadosPedido & { seq_pedido: number },
 ): Promise<ApiResponse<{ seq_pedido: number }>> => {
   try {
     const response = await fetch(`${API_BASE_URL}/pedidos/atualizar`, {
@@ -261,7 +265,7 @@ export const atualizarPedido = async (
  */
 export const sincronizarPedido = async (
   schema: string,
-  seq_pedido: number
+  seq_pedido: number,
 ): Promise<ApiResponse<void>> => {
   try {
     const response = await fetch(`${API_BASE_URL}/pedidos/sincronizar`, {

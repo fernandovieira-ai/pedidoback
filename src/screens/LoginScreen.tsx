@@ -33,12 +33,15 @@ import {
   clearAllStorage,
 } from "../services/storageService";
 import { formatCNPJ, unformatCNPJ } from "../utils/formatters";
+import { EmpresaLogo } from "../components/EmpresaLogo";
 
 type LoginStep = "cnpj" | "credentials";
 
 interface CNPJData {
   cnpj: string;
   schema: string;
+  logo_url?: string;
+  nome_empresa?: string;
 }
 
 interface LoginScreenProps {
@@ -55,6 +58,8 @@ export const LoginScreen = ({ navigation }: LoginScreenProps) => {
   // Etapa 1: CNPJ
   const [cnpj, setCNPJ] = useState("");
   const [cnpjData, setCNPJData] = useState<CNPJData | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | undefined>(undefined);
+  const [nomeEmpresa, setNomeEmpresa] = useState<string | undefined>(undefined);
 
   // Etapa 2: Credenciais
   const [usuario, setUsuario] = useState("");
@@ -76,6 +81,8 @@ export const LoginScreen = ({ navigation }: LoginScreenProps) => {
       if (cnpjSalvo) {
         setCNPJ(formatCNPJ(cnpjSalvo.cnpj));
         setCNPJData(cnpjSalvo);
+        setLogoUrl(cnpjSalvo.logo_url);
+        setNomeEmpresa(cnpjSalvo.nome_empresa);
         setLoginStep("credentials"); // Pula direto para credenciais
       }
 
@@ -137,9 +144,13 @@ export const LoginScreen = ({ navigation }: LoginScreenProps) => {
         const cnpjDataToSave = {
           cnpj: response.data.cnpj,
           schema: response.data.schema,
+          logo_url: response.data.logo_url,
+          nome_empresa: response.data.nome_empresa,
         };
 
         setCNPJData(cnpjDataToSave);
+        setLogoUrl(response.data.logo_url);
+        setNomeEmpresa(response.data.nome_empresa);
 
         // Salvar CNPJ validado para próximas vezes
         await saveCNPJData(cnpjDataToSave);
@@ -191,11 +202,26 @@ export const LoginScreen = ({ navigation }: LoginScreenProps) => {
           await saveAuthToken(response.data.token);
         }
 
+        // Atualizar logo_url e nome_empresa nos estados locais
+        const logoAtualizado = response.data.logo_url || logoUrl;
+        const nomeEmpresaAtualizado = response.data.nome_empresa || nomeEmpresa;
+
+        // Atualizar CNPJ_DATA com logo e nome atualizados
+        await saveCNPJData({
+          cnpj: response.data.cnpj,
+          schema: response.data.schema,
+          logo_url: logoAtualizado,
+          nome_empresa: nomeEmpresaAtualizado,
+        });
+
         // Salvar dados do usuário
         await saveUserData({
           usuario: response.data.usuario,
+          cod_usuario: response.data.cod_usuario,
           cnpj: response.data.cnpj,
           schema: response.data.schema,
+          logo_url: logoAtualizado,
+          nome_empresa: nomeEmpresaAtualizado,
         });
 
         // Salvar preferência "Lembrar-me"
@@ -240,6 +266,8 @@ export const LoginScreen = ({ navigation }: LoginScreenProps) => {
       await removeCNPJData();
       setCNPJ("");
       setCNPJData(null);
+      setLogoUrl(undefined);
+      setNomeEmpresa(undefined);
       setLoginStep("cnpj");
       setUsuario("");
       setSenha("");
@@ -281,11 +309,15 @@ export const LoginScreen = ({ navigation }: LoginScreenProps) => {
             {/* Header */}
             <View style={styles.loginHeader}>
               <View style={styles.logoContainer}>
-                <View style={styles.logoPlaceholder}>
-                  <Text style={styles.logoText}>LOGO</Text>
-                </View>
+                <EmpresaLogo
+                  logoUrl={logoUrl}
+                  nomeEmpresa={nomeEmpresa}
+                  size={100}
+                />
               </View>
-              <Text style={styles.title}>DIGITALRF</Text>
+              <Text style={styles.title}>
+                {nomeEmpresa || "DIGITALRF"}
+              </Text>
               <Text style={styles.subtitle}>
                 {loginStep === "cnpj"
                   ? "Informe seu CNPJ para acessar"

@@ -2,6 +2,7 @@ import { API_BASE_URL } from "../config/api";
 
 export interface ItemVenda {
   seq_nota: number;
+  seq_item_nota: number;
   cod_item: number;
   des_item: string;
   des_unidade: string;
@@ -44,7 +45,7 @@ interface ApiResponse<T> {
 export const buscarUltimaVenda = async (
   schema: string,
   usuario: string,
-  cod_cliente?: number
+  cod_cliente?: number,
 ): Promise<ApiResponse<UltimaVenda | null>> => {
   try {
     console.log("🔵 [vendaService] Iniciando busca de última venda");

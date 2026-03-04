@@ -23,6 +23,8 @@ import {
   EmpresaData,
 } from "../services/storageService";
 import { listarEmpresas, Empresa } from "../services/empresaService";
+import { EmpresaLogo } from "../components/EmpresaLogo";
+import { GerenciarLogoModal } from "../components/GerenciarLogoModal";
 
 interface DashboardScreenProps {
   navigation?: any;
@@ -36,6 +38,7 @@ export const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [modalEmpresaVisible, setModalEmpresaVisible] = useState(false);
   const [carregandoEmpresas, setCarregandoEmpresas] = useState(false);
+  const [modalLogoVisible, setModalLogoVisible] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -100,6 +103,18 @@ export const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
     Alert.alert("Sucesso", `Empresa "${empresa.nom_fantasia}" selecionada`);
   };
 
+  const handleLogoAtualizada = async (novaLogoUrl: string) => {
+    // Atualizar logo no estado local
+    if (userData) {
+      const updatedUserData = {
+        ...userData,
+        logo_url: novaLogoUrl,
+      };
+      setUserData(updatedUserData);
+      // Poderia salvar no storage também se quiser persistir
+    }
+  };
+
   const handleLogout = async () => {
     try {
       // Limpa apenas dados da sessão, mantém CNPJ e credenciais salvas
@@ -133,10 +148,20 @@ export const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* Header */}
           <View style={styles.header}>
-            <View style={styles.logoPlaceholder}>
-              <Text style={styles.logoText}>LOGO</Text>
+            <View style={styles.logoContainer}>
+              <EmpresaLogo
+                logoUrl={userData?.logo_url}
+                nomeEmpresa={userData?.nome_empresa}
+                size={80}
+              />
+              <TouchableOpacity
+                style={styles.configurarLogoButton}
+                onPress={() => setModalLogoVisible(true)}
+              >
+                <Text style={styles.configurarLogoIcon}>⚙️</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.title}>DIGITALRF</Text>
+            <Text style={styles.title}>{userData?.nome_empresa || "DIGITALRF"}</Text>
             <Text style={styles.subtitle}>Dashboard</Text>
           </View>
 
@@ -337,6 +362,19 @@ export const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
             </View>
           </View>
         </Modal>
+
+        {/* Modal de Gerenciar Logo */}
+        {userData && (
+          <GerenciarLogoModal
+            visible={modalLogoVisible}
+            onClose={() => setModalLogoVisible(false)}
+            schema={userData.schema}
+            cod_usuario={userData.cod_usuario}
+            logoAtual={userData.logo_url}
+            nomeEmpresa={userData.nome_empresa}
+            onLogoAtualizada={handleLogoAtualizada}
+          />
+        )}
       </SafeAreaView>
     </LinearGradient>
   );
@@ -367,6 +405,29 @@ const styles = StyleSheet.create({
   header: {
     alignItems: "center",
     marginBottom: 20,
+  },
+  logoContainer: {
+    position: "relative",
+    marginBottom: 12,
+  },
+  configurarLogoButton: {
+    position: "absolute",
+    bottom: 0,
+    right: -10,
+    backgroundColor: colors.primary,
+    borderRadius: 18,
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  configurarLogoIcon: {
+    fontSize: 20,
   },
   logoPlaceholder: {
     width: 80,

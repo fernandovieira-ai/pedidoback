@@ -6,6 +6,8 @@ export interface ValidateCNPJResponse {
   data?: {
     cnpj: string;
     schema: string;
+    logo_url?: string;
+    nome_empresa?: string;
   };
 }
 
@@ -14,9 +16,12 @@ export interface LoginResponse {
   message: string;
   data?: {
     usuario: string;
+    cod_usuario: string;
     cnpj: string;
     schema: string;
     token: string;
+    logo_url?: string;
+    nome_empresa?: string;
   };
 }
 

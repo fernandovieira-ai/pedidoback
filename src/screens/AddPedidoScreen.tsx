@@ -16,19 +16,35 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors } from "../styles/colors";
-import { pesquisarClientes, Cliente } from "../services/clienteService";
-import { pesquisarItens, Item, ItemPedido, buscarDetalhesItens } from "../services/itemService";
+import {
+  pesquisarClientes,
+  Cliente,
+  EnderecoCliente,
+  buscarEnderecosCliente,
+} from "../services/clienteService";
+import {
+  pesquisarItens,
+  Item,
+  ItemPedido,
+  buscarDetalhesItens,
+} from "../services/itemService";
 import {
   pesquisarCondicoesPagamento,
   CondicaoPagamento,
   calcularParcelasAutomaticas,
   buscarUltimaCondicaoPagamentoCliente,
 } from "../services/condicaoPagamentoService";
+import {
+  listarTiposCobranca,
+  TipoCobranca,
+  buscarTipoCobrancaPadrao,
+} from "../services/tipoCobrancaService";
 import { criarPedido, atualizarPedido } from "../services/pedidoService";
 import { formatDate, unformatDate, formatCurrency } from "../utils/formatters";
 import {
   buscarParametrosPreco,
   ParametrosPreco,
+  buscarParametroItensIniciais,
 } from "../services/parametroService";
 
 // Interface para parcelas/vencimentos
@@ -53,7 +69,7 @@ export default function AddPedidoScreen({
 
   // Estados do formulário
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(
-    null
+    null,
   );
   const [itensPedido, setItensPedido] = useState<ItemPedido[]>([]);
   const [desconto, setDesconto] = useState("");
@@ -91,6 +107,23 @@ export default function AddPedidoScreen({
     useState<CondicaoPagamento | null>(null);
   const [pesquisandoCondicoes, setPesquisandoCondicoes] = useState(false);
 
+  // Estados de tipo de cobrança
+  const [modalTipoCobrancaVisible, setModalTipoCobrancaVisible] =
+    useState(false);
+  const [tiposCobranca, setTiposCobranca] = useState<TipoCobranca[]>([]);
+  const [tipoCobrancaSelecionado, setTipoCobrancaSelecionado] =
+    useState<TipoCobranca | null>(null);
+  const [carregandoTiposCobranca, setCarregandoTiposCobranca] = useState(false);
+
+  // Estados de endereço do cliente
+  const [modalEnderecoVisible, setModalEnderecoVisible] = useState(false);
+  const [enderecosCliente, setEnderecosCliente] = useState<EnderecoCliente[]>(
+    [],
+  );
+  const [enderecoSelecionado, setEnderecoSelecionado] =
+    useState<EnderecoCliente | null>(null);
+  const [pesquisandoEnderecos, setPesquisandoEnderecos] = useState(false);
+
   // Estados de parcelamento
   const [modalParcelasVisible, setModalParcelasVisible] = useState(false);
   const [numeroParcelas, setNumeroParcelas] = useState("1");
@@ -99,7 +132,7 @@ export default function AddPedidoScreen({
   const [showDatePickerVencimento, setShowDatePickerVencimento] =
     useState(false);
   const [selectedDateVencimento, setSelectedDateVencimento] = useState(
-    new Date()
+    new Date(),
   );
 
   // Flag para controlar carregamento inicial em modo edição
@@ -111,7 +144,7 @@ export default function AddPedidoScreen({
 
   // Estado para rastrear preços sendo editados (índice do item -> texto)
   const [precosEmEdicao, setPrecosEmEdicao] = useState<Record<number, string>>(
-    {}
+    {},
   );
 
   const itemSearchInputRef = useRef<TextInput>(null);
@@ -120,6 +153,7 @@ export default function AddPedidoScreen({
   useEffect(() => {
     if (schema) {
       carregarParametrosPreco();
+      carregarTipoCobrancaPadrao();
     }
   }, [schema]);
 
@@ -131,6 +165,40 @@ export default function AddPedidoScreen({
       }
     } catch (error) {
       console.error("Erro ao carregar parâmetros de preço:", error);
+    }
+  };
+
+  const carregarTipoCobrancaPadrao = async () => {
+    try {
+      const resultadoParametro = await buscarTipoCobrancaPadrao(schema);
+
+      if (
+        resultadoParametro.success &&
+        resultadoParametro.data?.cod_tipo_cobranca_padrao
+      ) {
+        const codTipoPadrao = resultadoParametro.data.cod_tipo_cobranca_padrao;
+        console.log(`💳 Tipo de cobrança padrão configurado: ${codTipoPadrao}`);
+
+        // Buscar todos os tipos para encontrar o padrão
+        const resultadoTipos = await listarTiposCobranca(schema);
+
+        if (resultadoTipos.success && resultadoTipos.data) {
+          const tipoPadrao = resultadoTipos.data.find(
+            (t) => t.cod_tipo_cobranca === codTipoPadrao,
+          );
+
+          if (tipoPadrao) {
+            setTipoCobrancaSelecionado(tipoPadrao);
+            console.log(
+              `✅ Tipo de cobrança padrão selecionado: ${tipoPadrao.des_tipo_cobranca}`,
+            );
+          }
+        }
+      } else {
+        console.log("ℹ️ Tipo de cobrança padrão não configurado");
+      }
+    } catch (error) {
+      console.error("Erro ao carregar tipo de cobrança padrão:", error);
     }
   };
 
@@ -181,7 +249,7 @@ export default function AddPedidoScreen({
             per_margem_desejada: 0,
             quantidade: item.quantidade,
             val_total: item.val_total,
-          })
+          }),
         );
 
         // Busca os detalhes atualizados (preços e custos) do banco de dados
@@ -191,7 +259,7 @@ export default function AddPedidoScreen({
             const resultado = await buscarDetalhesItens(
               schema,
               empresa.cod_empresa,
-              codItens
+              codItens,
             );
 
             if (resultado.success && resultado.data) {
@@ -217,7 +285,9 @@ export default function AddPedidoScreen({
 
               setItensPedido(itensComDetalhes);
             } else {
-              console.warn("⚠️ Não foi possível carregar detalhes dos itens, usando valores salvos");
+              console.warn(
+                "⚠️ Não foi possível carregar detalhes dos itens, usando valores salvos",
+              );
               setItensPedido(itensConvertidos);
             }
           } catch (error) {
@@ -228,137 +298,211 @@ export default function AddPedidoScreen({
           setItensPedido(itensConvertidos);
         }
 
-      // Preencher condição de pagamento
-      if (
-        pedidoParaEditar.cod_condicao_pagamento &&
-        pedidoParaEditar.des_condicao_pagamento
-      ) {
-        const condicao: CondicaoPagamento = {
-          cod_condicao_pagamento: pedidoParaEditar.cod_condicao_pagamento,
-          des_condicao_pagamento: pedidoParaEditar.des_condicao_pagamento,
-          ind_tipo_condicao: "N",
-        };
-        setCondicaoSelecionada(condicao);
-      }
+        // Preencher condição de pagamento
+        if (
+          pedidoParaEditar.cod_condicao_pagamento &&
+          pedidoParaEditar.des_condicao_pagamento
+        ) {
+          const condicao: CondicaoPagamento = {
+            cod_condicao_pagamento: pedidoParaEditar.cod_condicao_pagamento,
+            des_condicao_pagamento: pedidoParaEditar.des_condicao_pagamento,
+            ind_tipo_condicao: "N",
+          };
+          setCondicaoSelecionada(condicao);
+        }
 
-      // Preencher valores
-      setDesconto(
-        pedidoParaEditar.val_desconto > 0
-          ? pedidoParaEditar.val_desconto.toString()
-          : ""
-      );
-      setAcrescimo(
-        pedidoParaEditar.val_acrescimo > 0
-          ? pedidoParaEditar.val_acrescimo.toString()
-          : ""
-      );
-      setFrete(
-        pedidoParaEditar.val_frete > 0
-          ? pedidoParaEditar.val_frete.toString()
-          : ""
-      );
-      setObservacao(pedidoParaEditar.des_observacao || "");
-
-      // Preencher parcelas
-      if (pedidoParaEditar.parcelas && pedidoParaEditar.parcelas.length > 0) {
-        console.log(
-          "📋 Carregando parcelas do pedido:",
-          pedidoParaEditar.parcelas
+        // Preencher valores
+        setDesconto(
+          pedidoParaEditar.val_desconto > 0
+            ? pedidoParaEditar.val_desconto.toString()
+            : "",
         );
-
-        // Verifica se há parcelas sem data de vencimento
-        const parcelasSemData = pedidoParaEditar.parcelas.filter(
-          (p) => !p.dataVencimento || p.dataVencimento.trim() === ""
+        setAcrescimo(
+          pedidoParaEditar.val_acrescimo > 0
+            ? pedidoParaEditar.val_acrescimo.toString()
+            : "",
         );
+        setFrete(
+          pedidoParaEditar.val_frete > 0
+            ? pedidoParaEditar.val_frete.toString()
+            : "",
+        );
+        setObservacao(pedidoParaEditar.des_observacao || "");
 
-        if (parcelasSemData.length > 0) {
-          console.warn(
-            `⚠️ ${parcelasSemData.length} parcela(s) sem data de vencimento detectada(s)`
-          );
-
-          // Verifica se a condição é automática
-          const isCondicaoAutomatica =
-            (pedidoParaEditar as any).ind_tipo_condicao === "A";
+        // Preencher parcelas
+        if (pedidoParaEditar.parcelas && pedidoParaEditar.parcelas.length > 0) {
           console.log(
-            `ℹ️ Tipo da condição: ${
-              (pedidoParaEditar as any).ind_tipo_condicao
-            } (Automática: ${isCondicaoAutomatica})`
+            "📋 Carregando parcelas do pedido:",
+            pedidoParaEditar.parcelas,
           );
 
-          // Se a condição é automática, recalcula as parcelas
-          if (isCondicaoAutomatica && pedidoParaEditar.cod_condicao_pagamento) {
-            console.log(
-              "🔄 Condição automática detectada - recalculando parcelas..."
+          // Verifica se há parcelas sem data de vencimento
+          const parcelasSemData = pedidoParaEditar.parcelas.filter(
+            (p) => !p.dataVencimento || p.dataVencimento.trim() === "",
+          );
+
+          if (parcelasSemData.length > 0) {
+            console.warn(
+              `⚠️ ${parcelasSemData.length} parcela(s) sem data de vencimento detectada(s)`,
             );
 
-            // Agenda o recálculo após o carregamento completo
-            setTimeout(async () => {
-              try {
-                const hoje = new Date();
-                const dia = String(hoje.getDate()).padStart(2, "0");
-                const mes = String(hoje.getMonth() + 1).padStart(2, "0");
-                const ano = hoje.getFullYear();
-                const dataHoje = `${dia}/${mes}/${ano}`;
+            // Verifica se a condição é automática
+            const isCondicaoAutomatica =
+              (pedidoParaEditar as any).ind_tipo_condicao === "A";
+            console.log(
+              `ℹ️ Tipo da condição: ${
+                (pedidoParaEditar as any).ind_tipo_condicao
+              } (Automática: ${isCondicaoAutomatica})`,
+            );
 
-                const resultado = await calcularParcelasAutomaticas(
-                  schema,
-                  pedidoParaEditar.cod_condicao_pagamento,
-                  pedidoParaEditar.val_total,
-                  dataHoje
-                );
+            // Se a condição é automática, recalcula as parcelas
+            if (
+              isCondicaoAutomatica &&
+              pedidoParaEditar.cod_condicao_pagamento
+            ) {
+              console.log(
+                "🔄 Condição automática detectada - recalculando parcelas...",
+              );
 
-                if (resultado.success && resultado.data) {
-                  const parcelasRecalculadas: Parcela[] = resultado.data.map(
-                    (p) => ({
-                      numero: p.numero,
-                      dataVencimento: p.dataVencimento,
-                      valor: p.valor,
-                    })
+              // Agenda o recálculo após o carregamento completo
+              setTimeout(async () => {
+                try {
+                  const hoje = new Date();
+                  const dia = String(hoje.getDate()).padStart(2, "0");
+                  const mes = String(hoje.getMonth() + 1).padStart(2, "0");
+                  const ano = hoje.getFullYear();
+                  const dataHoje = `${dia}/${mes}/${ano}`;
+
+                  const resultado = await calcularParcelasAutomaticas(
+                    schema,
+                    pedidoParaEditar.cod_condicao_pagamento,
+                    pedidoParaEditar.val_total,
+                    dataHoje,
                   );
-                  console.log(
-                    "✅ Parcelas recalculadas automaticamente:",
-                    parcelasRecalculadas
-                  );
-                  setParcelas(parcelasRecalculadas);
-                  setNumeroParcelas(parcelasRecalculadas.length.toString());
-                  if (parcelasRecalculadas[0]?.dataVencimento) {
-                    setDataVencimentoInicial(
-                      parcelasRecalculadas[0].dataVencimento
+
+                  if (resultado.success && resultado.data) {
+                    const parcelasRecalculadas: Parcela[] = resultado.data.map(
+                      (p) => ({
+                        numero: p.numero,
+                        dataVencimento: p.dataVencimento,
+                        valor: p.valor,
+                      }),
+                    );
+                    console.log(
+                      "✅ Parcelas recalculadas automaticamente:",
+                      parcelasRecalculadas,
+                    );
+                    setParcelas(parcelasRecalculadas);
+                    setNumeroParcelas(parcelasRecalculadas.length.toString());
+                    if (parcelasRecalculadas[0]?.dataVencimento) {
+                      setDataVencimentoInicial(
+                        parcelasRecalculadas[0].dataVencimento,
+                      );
+                    }
+                  } else {
+                    console.warn(
+                      "⚠️ Não foi possível recalcular - usando parcelas originais",
+                    );
+                    setParcelas(pedidoParaEditar.parcelas);
+                    setNumeroParcelas(
+                      pedidoParaEditar.parcelas.length.toString(),
                     );
                   }
-                } else {
-                  console.warn(
-                    "⚠️ Não foi possível recalcular - usando parcelas originais"
-                  );
+                } catch (error) {
+                  console.error("❌ Erro ao recalcular parcelas:", error);
                   setParcelas(pedidoParaEditar.parcelas);
                   setNumeroParcelas(
-                    pedidoParaEditar.parcelas.length.toString()
+                    pedidoParaEditar.parcelas.length.toString(),
                   );
                 }
-              } catch (error) {
-                console.error("❌ Erro ao recalcular parcelas:", error);
-                setParcelas(pedidoParaEditar.parcelas);
-                setNumeroParcelas(pedidoParaEditar.parcelas.length.toString());
-              }
-            }, 500);
+              }, 500);
+            } else {
+              console.log(
+                "ℹ️ Condição manual ou sem condição - mantendo parcelas originais (mesmo sem data)",
+              );
+              setParcelas(pedidoParaEditar.parcelas);
+              setNumeroParcelas(pedidoParaEditar.parcelas.length.toString());
+            }
           } else {
-            console.log(
-              "ℹ️ Condição manual ou sem condição - mantendo parcelas originais (mesmo sem data)"
-            );
+            // Todas as parcelas têm data, carrega normalmente
             setParcelas(pedidoParaEditar.parcelas);
             setNumeroParcelas(pedidoParaEditar.parcelas.length.toString());
-          }
-        } else {
-          // Todas as parcelas têm data, carrega normalmente
-          setParcelas(pedidoParaEditar.parcelas);
-          setNumeroParcelas(pedidoParaEditar.parcelas.length.toString());
-          if (pedidoParaEditar.parcelas[0].dataVencimento) {
-            setDataVencimentoInicial(
-              pedidoParaEditar.parcelas[0].dataVencimento
-            );
+            if (pedidoParaEditar.parcelas[0].dataVencimento) {
+              setDataVencimentoInicial(
+                pedidoParaEditar.parcelas[0].dataVencimento,
+              );
+            }
           }
         }
-      }
+
+        // Carregar endereço do pedido
+        if (pedidoParaEditar.seq_endereco) {
+          try {
+            console.log(
+              `🔍 Carregando endereço do pedido: seq_endereco ${pedidoParaEditar.seq_endereco}`,
+            );
+            const resultadoEnderecos = await buscarEnderecosCliente(
+              schema,
+              pedidoParaEditar.cod_cliente,
+            );
+
+            if (resultadoEnderecos.success && resultadoEnderecos.data) {
+              const enderecos = resultadoEnderecos.data;
+              setEnderecosCliente(enderecos);
+
+              // Encontrar o endereço específico do pedido
+              const enderecoEncontrado = enderecos.find(
+                (e) => e.seq_endereco === pedidoParaEditar.seq_endereco,
+              );
+
+              if (enderecoEncontrado) {
+                setEnderecoSelecionado(enderecoEncontrado);
+                console.log(
+                  `✅ Endereço do pedido carregado: ${enderecoEncontrado.des_logradouro}`,
+                );
+              } else {
+                console.warn(
+                  `⚠️ Endereço seq_endereco ${pedidoParaEditar.seq_endereco} não encontrado`,
+                );
+              }
+            }
+          } catch (error) {
+            console.error("❌ Erro ao carregar endereço do pedido:", error);
+          }
+        }
+
+        // Carregar tipo de cobrança do pedido
+        if (pedidoParaEditar.cod_tipo_cobranca) {
+          try {
+            console.log(
+              `🔍 Carregando tipo de cobrança do pedido: cod_tipo_cobranca ${pedidoParaEditar.cod_tipo_cobranca}`,
+            );
+            const resultadoTipos = await listarTiposCobranca(schema);
+
+            if (resultadoTipos.success && resultadoTipos.data) {
+              const tipos = resultadoTipos.data;
+              setTiposCobranca(tipos);
+
+              // Encontrar o tipo de cobrança específico do pedido
+              const tipoEncontrado = tipos.find(
+                (t) => t.cod_tipo_cobranca === pedidoParaEditar.cod_tipo_cobranca,
+              );
+
+              if (tipoEncontrado) {
+                setTipoCobrancaSelecionado(tipoEncontrado);
+                console.log(
+                  `✅ Tipo de cobrança do pedido carregado: ${tipoEncontrado.des_tipo_cobranca}`,
+                );
+              } else {
+                console.warn(
+                  `⚠️ Tipo de cobrança cod_tipo_cobranca ${pedidoParaEditar.cod_tipo_cobranca} não encontrado`,
+                );
+              }
+            }
+          } catch (error) {
+            console.error("❌ Erro ao carregar tipo de cobrança do pedido:", error);
+          }
+        }
 
         // Desmarca flag após carregar todos os dados (pequeno delay para garantir que estados foram atualizados)
         setTimeout(() => {
@@ -383,7 +527,7 @@ export default function AddPedidoScreen({
     if (parcelas.length > 0 && !loading) {
       // Verificar se todas as parcelas têm data de vencimento
       const todasPossuemData = parcelas.every(
-        (p) => p.dataVencimento && p.dataVencimento.trim() !== ""
+        (p) => p.dataVencimento && p.dataVencimento.trim() !== "",
       );
 
       if (!todasPossuemData) {
@@ -407,7 +551,7 @@ export default function AddPedidoScreen({
 
       console.log(
         "🔄 Recalculando parcelas (valores apenas):",
-        parcelasAtualizadas
+        parcelasAtualizadas,
       );
       setParcelas(parcelasAtualizadas);
     }
@@ -416,7 +560,7 @@ export default function AddPedidoScreen({
   // Pesquisar clientes no backend com paginação
   const handlePesquisarClientes = async (
     termo: string = termoPesquisa,
-    resetList: boolean = true
+    resetList: boolean = true,
   ) => {
     if (!schema) {
       Alert.alert("Erro", "Schema não encontrado. Faça login novamente.");
@@ -437,7 +581,7 @@ export default function AddPedidoScreen({
         usuario,
         termo,
         100,
-        currentOffset
+        currentOffset,
       );
 
       if (response.success && response.data) {
@@ -515,21 +659,60 @@ export default function AddPedidoScreen({
     setOffset(0);
     setHasMore(true);
 
+    // Buscar endereços do cliente
+    if (schema && cliente.cod_pessoa) {
+      try {
+        console.log(
+          `🔍 Buscando endereços do cliente ${cliente.cod_pessoa}...`,
+        );
+        setPesquisandoEnderecos(true);
+        const resultado = await buscarEnderecosCliente(
+          schema,
+          cliente.cod_pessoa,
+        );
+
+        if (resultado.success && resultado.data) {
+          const enderecos = resultado.data;
+          console.log(`✅ ${enderecos.length} endereço(s) encontrado(s)`);
+          setEnderecosCliente(enderecos);
+
+          if (enderecos.length >= 2) {
+            // Tem 2 ou mais endereços - abrir modal de seleção
+            setModalEnderecoVisible(true);
+          } else if (enderecos.length === 1) {
+            // Tem apenas 1 endereço - selecionar automaticamente
+            setEnderecoSelecionado(enderecos[0]);
+            console.log(
+              `✅ Endereço único selecionado automaticamente: seq_endereco ${enderecos[0].seq_endereco}`,
+            );
+          } else {
+            // Nenhum endereço encontrado
+            setEnderecoSelecionado(null);
+            console.log(`ℹ️ Cliente sem endereço cadastrado`);
+          }
+        }
+        setPesquisandoEnderecos(false);
+      } catch (error) {
+        console.error("❌ Erro ao buscar endereços:", error);
+        setPesquisandoEnderecos(false);
+      }
+    }
+
     // Buscar última condição de pagamento do cliente (se parâmetro 5 = 'S')
     // Apenas se NÃO estiver em modo de edição
     if (!modoEdicao && schema && cliente.cod_pessoa) {
       try {
         console.log(
-          `🔍 Buscando última condição de pagamento do cliente ${cliente.cod_pessoa}...`
+          `🔍 Buscando última condição de pagamento do cliente ${cliente.cod_pessoa}...`,
         );
         const resultado = await buscarUltimaCondicaoPagamentoCliente(
           schema,
-          cliente.cod_pessoa
+          cliente.cod_pessoa,
         );
 
         if (resultado.success && resultado.data) {
           console.log(
-            `✅ Condição encontrada: ${resultado.data.des_condicao_pagamento}`
+            `✅ Condição encontrada: ${resultado.data.des_condicao_pagamento}`,
           );
           setCondicaoSelecionada(resultado.data);
 
@@ -549,7 +732,7 @@ export default function AddPedidoScreen({
                 schema,
                 resultado.data.cod_condicao_pagamento,
                 total,
-                dataHoje
+                dataHoje,
               );
 
               if (resultadoParcelas.success && resultadoParcelas.data) {
@@ -565,7 +748,7 @@ export default function AddPedidoScreen({
           }
         } else {
           console.log(
-            `ℹ️ ${resultado.message || "Nenhuma condição de pagamento encontrada"}`
+            `ℹ️ ${resultado.message || "Nenhuma condição de pagamento encontrada"}`,
           );
         }
       } catch (error) {
@@ -577,6 +760,17 @@ export default function AddPedidoScreen({
   // Limpar cliente selecionado
   const limparCliente = () => {
     setClienteSelecionado(null);
+    setEnderecoSelecionado(null);
+    setEnderecosCliente([]);
+  };
+
+  // Selecionar endereço
+  const selecionarEndereco = (endereco: EnderecoCliente) => {
+    setEnderecoSelecionado(endereco);
+    setModalEnderecoVisible(false);
+    console.log(
+      `✅ Endereço selecionado: seq_endereco ${endereco.seq_endereco}`,
+    );
   };
 
   // Manipular mudança de data no campo de texto
@@ -642,10 +836,49 @@ export default function AddPedidoScreen({
   };
 
   // Abrir modal de pesquisa de item
-  const abrirPesquisaItem = () => {
+  const abrirPesquisaItem = async () => {
     setModalItemVisible(true);
     setTermoPesquisaItem("");
     setItens([]);
+
+    // Verificar se existe parâmetro de itens iniciais
+    if (schema && empresa?.cod_empresa) {
+      try {
+        const resultadoParametro = await buscarParametroItensIniciais(schema);
+
+        if (
+          resultadoParametro.success &&
+          resultadoParametro.data?.quantidade_itens_iniciais &&
+          resultadoParametro.data.quantidade_itens_iniciais > 0
+        ) {
+          const quantidade = resultadoParametro.data.quantidade_itens_iniciais;
+          console.log(
+            `📦 Carregando ${quantidade} itens iniciais automaticamente...`,
+          );
+
+          setPesquisandoItens(true);
+          const response = await pesquisarItens(
+            schema,
+            empresa.cod_empresa,
+            "", // termo vazio para buscar todos
+            quantidade,
+          );
+
+          if (response.success && response.data) {
+            setItens(response.data);
+            console.log(`✅ ${response.data.length} itens carregados`);
+          }
+          setPesquisandoItens(false);
+        } else {
+          console.log(
+            "ℹ️ Parâmetro de itens iniciais não configurado - tela vazia",
+          );
+        }
+      } catch (error) {
+        console.error("Erro ao carregar itens iniciais:", error);
+        setPesquisandoItens(false);
+      }
+    }
   };
 
   // Adicionar item ao pedido
@@ -686,7 +919,7 @@ export default function AddPedidoScreen({
 
   const validarMargemItem = (
     item: ItemPedido,
-    novoPreco: number
+    novoPreco: number,
   ): { valido: boolean; mensagem?: string; isWarning?: boolean } => {
     if (!parametrosPreco || parametrosPreco.permite_alterar_preco !== "S") {
       return { valido: true }; // Se não pode alterar preço, não valida margem
@@ -707,9 +940,9 @@ export default function AddPedidoScreen({
       margemAtual < item.per_margem_desejada
     ) {
       const mensagem = `Margem atual (${margemAtual.toFixed(
-        2
+        2,
       )}%) está abaixo da margem desejada (${item.per_margem_desejada.toFixed(
-        2
+        2,
       )}%)`;
 
       // Se o parâmetro 7 = 'N', apenas avisa mas permite continuar
@@ -746,7 +979,7 @@ export default function AddPedidoScreen({
         "Margem Abaixo da Desejada",
         validacao.mensagem ||
           "O preço informado está abaixo da margem desejada.",
-        [{ text: "OK" }]
+        [{ text: "OK" }],
       );
 
       // Remove o texto em edição e mantém o preço original
@@ -763,7 +996,7 @@ export default function AddPedidoScreen({
       Alert.alert(
         "Atenção: Margem Abaixo da Desejada",
         `${validacao.mensagem}\n\nO item será incluído mesmo assim.`,
-        [{ text: "OK" }]
+        [{ text: "OK" }],
       );
     }
 
@@ -839,6 +1072,49 @@ export default function AddPedidoScreen({
     }
   };
 
+  // ===== FUNÇÕES DE TIPO DE COBRANÇA =====
+
+  // Abrir modal de tipos de cobrança
+  const abrirSelecionadorTipoCobranca = async () => {
+    if (!schema) {
+      Alert.alert("Erro", "Schema não disponível");
+      return;
+    }
+
+    try {
+      setCarregandoTiposCobranca(true);
+      setModalTipoCobrancaVisible(true);
+
+      const resultado = await listarTiposCobranca(schema);
+
+      if (resultado.success && resultado.data) {
+        setTiposCobranca(resultado.data);
+      } else {
+        Alert.alert("Erro", resultado.message);
+        setTiposCobranca([]);
+      }
+    } catch (error) {
+      console.error("Erro ao listar tipos de cobrança:", error);
+      Alert.alert("Erro", "Erro ao carregar tipos de cobrança");
+    } finally {
+      setCarregandoTiposCobranca(false);
+    }
+  };
+
+  // Selecionar tipo de cobrança
+  const selecionarTipoCobranca = (tipo: TipoCobranca) => {
+    setTipoCobrancaSelecionado(tipo);
+    setModalTipoCobrancaVisible(false);
+    console.log(`✅ Tipo de cobrança selecionado: ${tipo.des_tipo_cobranca}`);
+  };
+
+  // Limpar tipo de cobrança
+  const limparTipoCobranca = () => {
+    setTipoCobrancaSelecionado(null);
+  };
+
+  // ===== FUNÇÕES DE CONDIÇÃO DE PAGAMENTO =====
+
   // Abrir modal de condições
   const abrirPesquisaCondicao = async () => {
     setModalCondicaoVisible(true);
@@ -868,7 +1144,7 @@ export default function AddPedidoScreen({
           schema,
           condicao.cod_condicao_pagamento,
           total,
-          dataHoje
+          dataHoje,
         );
 
         if (resultado.success && resultado.data) {
@@ -883,7 +1159,7 @@ export default function AddPedidoScreen({
           Alert.alert(
             "Condição Automática",
             `${parcelasConvertidas.length} parcela(s) calculada(s) automaticamente. Você pode visualizar as parcelas abaixo.`,
-            [{ text: "OK" }]
+            [{ text: "OK" }],
           );
         } else {
           // Se não conseguir calcular, apenas limpa parcelas e avisa
@@ -891,7 +1167,7 @@ export default function AddPedidoScreen({
           Alert.alert(
             "Condição Automática",
             "Esta condição de pagamento possui cálculo automático de parcelas. As parcelas serão geradas automaticamente pelo sistema quando o pedido for salvo.",
-            [{ text: "OK" }]
+            [{ text: "OK" }],
           );
         }
       } catch (error) {
@@ -899,7 +1175,7 @@ export default function AddPedidoScreen({
         setParcelas([]);
         Alert.alert(
           "Aviso",
-          "Não foi possível calcular as parcelas neste momento. As parcelas serão geradas automaticamente quando o pedido for salvo."
+          "Não foi possível calcular as parcelas neste momento. As parcelas serão geradas automaticamente quando o pedido for salvo.",
         );
       } finally {
         setLoading(false);
@@ -964,7 +1240,7 @@ export default function AddPedidoScreen({
     setModalParcelasVisible(false);
     Alert.alert(
       "Sucesso",
-      `Condição de pagamento configurada: ${parcelas.length} parcela(s)`
+      `Condição de pagamento configurada: ${parcelas.length} parcela(s)`,
     );
   };
 
@@ -1034,7 +1310,7 @@ export default function AddPedidoScreen({
           Alert.alert(
             "Margem Abaixo da Desejada",
             `Item ${item.des_item}:\n${validacao.mensagem}\n\nNão é possível salvar o pedido.`,
-            [{ text: "OK" }]
+            [{ text: "OK" }],
           );
           return;
         }
@@ -1061,7 +1337,7 @@ export default function AddPedidoScreen({
     if (parcelas.length > 0 && condicaoSelecionada.ind_tipo_condicao !== "A") {
       // Verifica se todas as parcelas têm data de vencimento antes de recalcular
       const todasPossuemData = parcelas.every(
-        (p) => p.dataVencimento && p.dataVencimento.trim() !== ""
+        (p) => p.dataVencimento && p.dataVencimento.trim() !== "",
       );
 
       if (todasPossuemData) {
@@ -1098,7 +1374,7 @@ export default function AddPedidoScreen({
       console.log("Pedido a ser enviado:", pedido);
       console.log(
         "Parcelas a serem enviadas (RECALCULADAS):",
-        JSON.stringify(parcelasAtualizadas, null, 2)
+        JSON.stringify(parcelasAtualizadas, null, 2),
       );
 
       // Chamar API para salvar ou atualizar o pedido
@@ -1112,6 +1388,8 @@ export default function AddPedidoScreen({
           cod_empresa: empresa.cod_empresa,
           usuario,
           cliente: clienteSelecionado,
+          seq_endereco: enderecoSelecionado?.seq_endereco,
+          cod_tipo_cobranca: tipoCobrancaSelecionado?.cod_tipo_cobranca,
           dataEntrega,
           itens: itensPedido,
           subtotal: calcularSubtotal(),
@@ -1130,6 +1408,8 @@ export default function AddPedidoScreen({
           cod_empresa: empresa.cod_empresa,
           usuario,
           cliente: clienteSelecionado,
+          seq_endereco: enderecoSelecionado?.seq_endereco,
+          cod_tipo_cobranca: tipoCobrancaSelecionado?.cod_tipo_cobranca,
           dataEntrega,
           itens: itensPedido,
           subtotal: calcularSubtotal(),
@@ -1149,7 +1429,7 @@ export default function AddPedidoScreen({
           resultado.message ||
             (modoEdicao
               ? "Erro ao atualizar pedido"
-              : "Erro ao cadastrar pedido")
+              : "Erro ao cadastrar pedido"),
         );
         return;
       }
@@ -1169,6 +1449,8 @@ export default function AddPedidoScreen({
               } else {
                 // Se for novo pedido, limpar campos e voltar
                 setClienteSelecionado(null);
+                setEnderecoSelecionado(null);
+                setEnderecosCliente([]);
                 setItensPedido([]);
                 setDesconto("");
                 setAcrescimo("");
@@ -1183,7 +1465,7 @@ export default function AddPedidoScreen({
               }
             },
           },
-        ]
+        ],
       );
     } catch (error) {
       Alert.alert("Erro", "Erro ao cadastrar pedido");
@@ -1259,12 +1541,40 @@ export default function AddPedidoScreen({
                     <Text style={styles.clienteDetalhe}>
                       CNPJ: {clienteSelecionado.num_cnpj}
                     </Text>
+                    {enderecoSelecionado && (
+                      <Text style={styles.enderecoSelecionadoLabel}>
+                        📍 Endereço de Entrega:
+                      </Text>
+                    )}
                     <Text style={styles.clienteDetalhe}>
-                      {clienteSelecionado.des_endereco}
+                      {enderecoSelecionado
+                        ? enderecoSelecionado.des_logradouro +
+                          (enderecoSelecionado.des_complemento
+                            ? `, ${enderecoSelecionado.des_complemento}`
+                            : "")
+                        : clienteSelecionado.des_endereco}
                     </Text>
                     <Text style={styles.clienteDetalhe}>
-                      {clienteSelecionado.nom_cidade}
+                      {enderecoSelecionado
+                        ? `${enderecoSelecionado.nom_bairro} - ${enderecoSelecionado.nom_cidade}`
+                        : clienteSelecionado.nom_cidade}
                     </Text>
+                    {enderecoSelecionado?.num_cep && (
+                      <Text style={styles.clienteDetalhe}>
+                        CEP: {enderecoSelecionado.num_cep}
+                      </Text>
+                    )}
+                    {enderecosCliente.length >= 2 && (
+                      <TouchableOpacity
+                        style={styles.alterarEnderecoButton}
+                        onPress={() => setModalEnderecoVisible(true)}
+                        disabled={loading}
+                      >
+                        <Text style={styles.alterarEnderecoButtonText}>
+                          🔄 Alterar Endereço
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                   <TouchableOpacity
                     style={styles.removeButton}
@@ -1301,15 +1611,68 @@ export default function AddPedidoScreen({
               </View>
             </View>
 
-            {/* DateTimePicker */}
-            {showDatePicker && (
+            {/* DateTimePicker Android */}
+            {showDatePicker && Platform.OS === "android" && (
               <DateTimePicker
                 value={selectedDate}
                 mode="date"
-                display={Platform.OS === "ios" ? "spinner" : "default"}
+                display="default"
                 onChange={handleDateSelect}
                 locale="pt-BR"
               />
+            )}
+
+            {/* Modal DatePicker iOS */}
+            {showDatePicker && Platform.OS === "ios" && (
+              <Modal
+                visible={showDatePicker}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => setShowDatePicker(false)}
+              >
+                <View style={styles.modalOverlay}>
+                  <View style={styles.datePickerModalContent}>
+                    <View style={styles.datePickerHeader}>
+                      <TouchableOpacity
+                        onPress={() => setShowDatePicker(false)}
+                      >
+                        <Text style={styles.datePickerCancelText}>
+                          Cancelar
+                        </Text>
+                      </TouchableOpacity>
+                      <Text style={styles.datePickerTitle}>
+                        Selecionar Data
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const day = String(selectedDate.getDate()).padStart(
+                            2,
+                            "0",
+                          );
+                          const month = String(
+                            selectedDate.getMonth() + 1,
+                          ).padStart(2, "0");
+                          const year = selectedDate.getFullYear();
+                          setDataEntrega(`${day}/${month}/${year}`);
+                          setShowDatePicker(false);
+                        }}
+                      >
+                        <Text style={styles.datePickerConfirmText}>
+                          Confirmar
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <DateTimePicker
+                      value={selectedDate}
+                      mode="date"
+                      display="spinner"
+                      onChange={handleDateSelect}
+                      locale="pt-BR"
+                      style={styles.iosDatePicker}
+                    />
+                  </View>
+                </View>
+              </Modal>
             )}
 
             {/* Botão Pesquisar Item */}
@@ -1403,7 +1766,7 @@ export default function AddPedidoScreen({
                             {formatCurrency(
                               parametrosPreco.tipo_custo === "U"
                                 ? item.val_custo_unitario
-                                : item.val_custo_medio
+                                : item.val_custo_medio,
                             )}
                           </Text>
                         </View>
@@ -1416,7 +1779,7 @@ export default function AddPedidoScreen({
                           item.val_preco_venda,
                           parametrosPreco.tipo_custo === "U"
                             ? item.val_custo_unitario
-                            : item.val_custo_medio
+                            : item.val_custo_medio,
                         ) < item.per_margem_desejada && (
                           <View style={styles.itemMargemBaixaWarning}>
                             <Text style={styles.itemMargemBaixaIcon}>⚠️</Text>
@@ -1511,7 +1874,7 @@ export default function AddPedidoScreen({
                     <Text style={styles.totaisLabel}>- Desconto:</Text>
                     <Text style={styles.totaisValor}>
                       {formatCurrency(
-                        parseFloat(desconto.replace(",", ".") || "0")
+                        parseFloat(desconto.replace(",", ".") || "0"),
                       )}
                     </Text>
                   </View>
@@ -1521,7 +1884,7 @@ export default function AddPedidoScreen({
                     <Text style={styles.totaisLabel}>+ Acréscimo:</Text>
                     <Text style={styles.totaisValor}>
                       {formatCurrency(
-                        parseFloat(acrescimo.replace(",", ".") || "0")
+                        parseFloat(acrescimo.replace(",", ".") || "0"),
                       )}
                     </Text>
                   </View>
@@ -1531,7 +1894,7 @@ export default function AddPedidoScreen({
                     <Text style={styles.totaisLabel}>+ Frete:</Text>
                     <Text style={styles.totaisValor}>
                       {formatCurrency(
-                        parseFloat(frete.replace(",", ".") || "0")
+                        parseFloat(frete.replace(",", ".") || "0"),
                       )}
                     </Text>
                   </View>
@@ -1540,6 +1903,43 @@ export default function AddPedidoScreen({
                   <Text style={styles.totalFinalLabel}>TOTAL:</Text>
                   <Text style={styles.totalFinalValor}>
                     {formatCurrency(calcularTotal())}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Botão Adicionar Tipo de Cobrança */}
+            {itensPedido.length > 0 && !tipoCobrancaSelecionado && (
+              <TouchableOpacity
+                style={styles.searchButtonLarge}
+                onPress={abrirSelecionadorTipoCobranca}
+                disabled={loading}
+              >
+                <Text style={styles.searchButtonLargeText}>
+                  💰 Adicionar Tipo de Cobrança
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Tipo de Cobrança Selecionado */}
+            {tipoCobrancaSelecionado && (
+              <View style={styles.condicaoSection}>
+                <View style={styles.condicaoHeader}>
+                  <Text style={styles.condicaoLabel}>Tipo de Cobrança</Text>
+                  <TouchableOpacity
+                    style={styles.trocarCondicaoButton}
+                    onPress={abrirSelecionadorTipoCobranca}
+                    disabled={loading}
+                  >
+                    <Text style={styles.trocarCondicaoText}>Alterar</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.condicaoCard}>
+                  <Text style={styles.condicaoNome}>
+                    {tipoCobrancaSelecionado.des_tipo_cobranca}
+                  </Text>
+                  <Text style={styles.condicaoDetalhe}>
+                    Código: {tipoCobrancaSelecionado.cod_tipo_cobranca}
                   </Text>
                 </View>
               </View>
@@ -1621,7 +2021,7 @@ export default function AddPedidoScreen({
                             "Data:",
                             parcela.dataVencimento,
                             "Valor:",
-                            parcela.valor
+                            parcela.valor,
                           );
                           return (
                             <View
@@ -1864,8 +2264,134 @@ export default function AddPedidoScreen({
                         {termoPesquisa.length >= 2
                           ? "Nenhum cliente encontrado"
                           : termoPesquisa.length > 0
-                          ? "Digite pelo menos 2 caracteres para pesquisar"
-                          : "Digite nome, CNPJ ou código para buscar clientes"}
+                            ? "Digite pelo menos 2 caracteres para pesquisar"
+                            : "Digite nome, CNPJ ou código para buscar clientes"}
+                      </Text>
+                    </View>
+                  }
+                />
+              )}
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal de Seleção de Endereço */}
+        <Modal
+          visible={modalEnderecoVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setModalEnderecoVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Selecionar Endereço</Text>
+                <TouchableOpacity
+                  onPress={() => setModalEnderecoVisible(false)}
+                  style={styles.modalCloseButton}
+                >
+                  <Text style={styles.modalCloseButtonText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              {pesquisandoEnderecos ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                  <Text style={styles.loadingText}>
+                    Carregando endereços...
+                  </Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={enderecosCliente}
+                  keyExtractor={(item) => item.seq_endereco.toString()}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.enderecoItem}
+                      onPress={() => selecionarEndereco(item)}
+                    >
+                      <View style={styles.enderecoItemContent}>
+                        <Text style={styles.enderecoItemLogradouro}>
+                          {item.des_logradouro}
+                        </Text>
+                        {item.des_complemento ? (
+                          <Text style={styles.enderecoItemDetalhe}>
+                            Complemento: {item.des_complemento}
+                          </Text>
+                        ) : null}
+                        <Text style={styles.enderecoItemDetalhe}>
+                          {item.nom_bairro} - {item.nom_cidade}
+                        </Text>
+                        <Text style={styles.enderecoItemDetalhe}>
+                          CEP: {item.num_cep}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                  ListEmptyComponent={
+                    <View style={styles.emptyContainer}>
+                      <Text style={styles.emptyText}>
+                        Nenhum endereço encontrado para este cliente
+                      </Text>
+                    </View>
+                  }
+                />
+              )}
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal de Seleção de Tipo de Cobrança */}
+        <Modal
+          visible={modalTipoCobrancaVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setModalTipoCobrancaVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  Selecionar Tipo de Cobrança
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setModalTipoCobrancaVisible(false)}
+                  style={styles.modalCloseButton}
+                >
+                  <Text style={styles.modalCloseButtonText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              {carregandoTiposCobranca ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                  <Text style={styles.loadingText}>
+                    Carregando tipos de cobrança...
+                  </Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={tiposCobranca}
+                  keyExtractor={(item) => item.cod_tipo_cobranca.toString()}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.condicaoItem}
+                      onPress={() => selecionarTipoCobranca(item)}
+                    >
+                      <View style={styles.condicaoItemContent}>
+                        <Text style={styles.condicaoItemNome}>
+                          {item.des_tipo_cobranca}
+                        </Text>
+                        <Text style={styles.condicaoItemDetalhe}>
+                          Código: {item.cod_tipo_cobranca}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                  ListEmptyComponent={
+                    <View style={styles.emptyContainer}>
+                      <Text style={styles.emptyText}>
+                        Nenhum tipo de cobrança encontrado
                       </Text>
                     </View>
                   }
@@ -2014,15 +2540,69 @@ export default function AddPedidoScreen({
                   </View>
                 </View>
 
-                {/* DatePicker */}
-                {showDatePickerVencimento && (
+                {/* DatePicker Android */}
+                {showDatePickerVencimento && Platform.OS === "android" && (
                   <DateTimePicker
                     value={selectedDateVencimento}
                     mode="date"
-                    display={Platform.OS === "ios" ? "spinner" : "default"}
+                    display="default"
                     onChange={handleDateSelectVencimento}
                     locale="pt-BR"
                   />
+                )}
+
+                {/* Modal DatePicker iOS */}
+                {showDatePickerVencimento && Platform.OS === "ios" && (
+                  <Modal
+                    visible={showDatePickerVencimento}
+                    animationType="slide"
+                    transparent={true}
+                    onRequestClose={() => setShowDatePickerVencimento(false)}
+                  >
+                    <View style={styles.modalOverlay}>
+                      <View style={styles.datePickerModalContent}>
+                        <View style={styles.datePickerHeader}>
+                          <TouchableOpacity
+                            onPress={() => setShowDatePickerVencimento(false)}
+                          >
+                            <Text style={styles.datePickerCancelText}>
+                              Cancelar
+                            </Text>
+                          </TouchableOpacity>
+                          <Text style={styles.datePickerTitle}>
+                            Selecionar Data
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() => {
+                              const day = String(
+                                selectedDateVencimento.getDate(),
+                              ).padStart(2, "0");
+                              const month = String(
+                                selectedDateVencimento.getMonth() + 1,
+                              ).padStart(2, "0");
+                              const year = selectedDateVencimento.getFullYear();
+                              setDataVencimentoInicial(
+                                `${day}/${month}/${year}`,
+                              );
+                              setShowDatePickerVencimento(false);
+                            }}
+                          >
+                            <Text style={styles.datePickerConfirmText}>
+                              Confirmar
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                        <DateTimePicker
+                          value={selectedDateVencimento}
+                          mode="date"
+                          display="spinner"
+                          onChange={handleDateSelectVencimento}
+                          locale="pt-BR"
+                          style={styles.iosDatePicker}
+                        />
+                      </View>
+                    </View>
+                  </Modal>
                 )}
 
                 {/* Botão Calcular */}
@@ -2319,6 +2899,28 @@ const styles = StyleSheet.create({
     color: colors.darkGray,
     marginBottom: 2,
   },
+  enderecoSelecionadoLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.primary,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  alterarEnderecoButton: {
+    backgroundColor: colors.lightGray,
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    alignSelf: "flex-start",
+  },
+  alterarEnderecoButtonText: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: "600",
+  },
   removeButton: {
     backgroundColor: colors.error,
     borderRadius: 15,
@@ -2486,6 +3088,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.mediumGray,
     textAlign: "center",
+  },
+  // Estilos do modal de endereço
+  enderecoItem: {
+    backgroundColor: colors.white,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.lightGray,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  enderecoItemContent: {
+    flex: 1,
+  },
+  enderecoItemLogradouro: {
+    fontSize: 15,
+    fontWeight: "bold",
+    color: colors.primary,
+    marginBottom: 4,
+  },
+  enderecoItemDetalhe: {
+    fontSize: 13,
+    color: colors.darkGray,
+    marginBottom: 2,
   },
   // Estilos do botão de adicionar item
   searchButtonLarge: {
@@ -2986,5 +3616,52 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 16,
     fontWeight: "bold",
+  },
+  // Estilos do DatePicker iOS
+  datePickerModalContent: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    width: "100%",
+    position: "absolute",
+    bottom: 0,
+    paddingBottom: 20,
+    minHeight: 300,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  datePickerHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.lightGray,
+    backgroundColor: colors.primary,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  datePickerTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: colors.white,
+  },
+  datePickerCancelText: {
+    fontSize: 16,
+    color: colors.white,
+    fontWeight: "600",
+  },
+  datePickerConfirmText: {
+    fontSize: 16,
+    color: colors.white,
+    fontWeight: "bold",
+  },
+  iosDatePicker: {
+    backgroundColor: colors.white,
+    height: 200,
   },
 });

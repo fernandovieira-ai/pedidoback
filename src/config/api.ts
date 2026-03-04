@@ -31,9 +31,9 @@ const SERVERS = {
   network: "http://192.168.100.12:3001/api",
   // Para descobrir seu IP: ipconfig (Windows) ou ifconfig (Linux/Mac)
 
-  // 🚀 PRODUÇÃO - Servidor externo (outro PC com IP fixo)
-  // ⚠️ CONFIGURE AQUI o IP do servidor de produção (131.100.231.199)
-  production: "http://131.100.231.199:3001/api",
+  // 🚀 PRODUÇÃO - Servidor Railway (Cloud)
+  // Backend hospedado no Railway com HTTPS automático
+  production: "https://backeend-pedido-production-25a7.up.railway.app/api",
 };
 
 // ============================================
@@ -41,6 +41,9 @@ const SERVERS = {
 // ============================================
 // Altere entre: 'local' | 'network' | 'production'
 
+// 🔧 ALTERE AQUI para mudar entre local e Railway:
+// "network" = Backend local (192.168.100.12:3001)
+// "production" = Backend Railway (cloud)
 const MODO_ATUAL: "local" | "network" | "production" = "network";
 
 // 💡 GUIA RÁPIDO DE USO:
@@ -51,16 +54,17 @@ const MODO_ATUAL: "local" | "network" | "production" = "network";
 //   - Android Emulator
 //   - Backend rodando em localhost
 //
-// MODO 'network': ← VOCÊ ESTÁ AQUI AGORA
+// MODO 'network':
 //   - Para testes em celular físico
 //   - Celular e PC na mesma rede WiFi
-//   - Backend rodando em 131.100.231.199
-//   - Use este para desenvolvimento atual
+//   - Backend rodando em 192.168.100.12
+//   - Use este para desenvolvimento local
 //
-// MODO 'production':
+// MODO 'production': ← VOCÊ ESTÁ AQUI AGORA
 //   - App publicado
-//   - Backend em servidor externo
-//   - IP fixo na internet
+//   - Backend hospedado no Railway
+//   - HTTPS automático
+//   - Acesso de qualquer lugar via internet
 
 // ============================================
 // 🔄 LÓGICA DE SELEÇÃO (NÃO ALTERE)

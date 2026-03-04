@@ -1,4 +1,9 @@
 {
+  "env": {
+    "MAX_THINKING_TOKENS": "10000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50",
+    "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1"
+  },
   "permissions": {
     "allow": [
       "Bash(cat:*)",
@@ -21,9 +26,30 @@
       "Bash(powershell.exe -Command \"Stop-Process -Id 13160 -Force\")",
       "Bash(findstr:*)",
       "Bash(npx expo start --clear)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git config:*)",
+      "Bash(git remote add:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(curl:*)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File testar-backend.ps1)",
+      "Bash(powershell.exe -Command \"Get-Content ''src\\screens\\AddPedidoScreen.tsx'' -Tail 20\")",
+      "Bash(powershell.exe -Command \"Select-String -Path ''src\\screens\\AddPedidoScreen.tsx'' -Pattern ''datePickerModalContent:'' -Context 0,15\")",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File fix-datepicker.ps1)",
+      "Bash(powershell.exe -Command \"Select-String -Path ''src\\screens\\AddPedidoScreen.tsx'' -Pattern ''datePickerModalContent:'' -Context 0,9\")",
+      "Bash(del fix-datepicker.ps1)",
+      "Bash(powershell.exe -Command \"Remove-Item fix-datepicker.ps1\")",
+      "Bash(powershell.exe -Command \"Select-String -Path ''src\\screens\\AddPedidoScreen.tsx'' -Pattern ''iosDatePicker:'' -Context 0,4\")",
+      "Bash(git checkout:*)",
+      "Bash(powershell.exe -Command \"(Get-Content ''src\\screens\\AddPedidoScreen.tsx'').Count\")",
+      "Bash(npx tsc:*)",
+      "Bash(npx expo install:*)",
+      "Bash(powershell.exe -Command \"(Get-Content ''src\\screens\\DashboardScreen.tsx'').Count\")",
+      "Bash(git remote:*)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "model": "claude-sonnet-4-5-20251001"
 }

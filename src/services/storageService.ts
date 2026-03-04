@@ -15,8 +15,11 @@ const STORAGE_KEYS = {
 // Interface dos dados do usuário
 export interface UserData {
   usuario: string;
+  cod_usuario: string;
   cnpj: string;
   schema: string;
+  logo_url?: string;
+  nome_empresa?: string;
 }
 
 /**
@@ -179,6 +182,8 @@ export interface CNPJData {
   cnpj: string;
   schema: string;
   empresa?: string;
+  logo_url?: string;
+  nome_empresa?: string;
 }
 
 /**
