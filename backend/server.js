@@ -70,6 +70,7 @@ app.post("/api/auth/validate-cnpj", async (req, res) => {
     const cnpjNumeros = cnpj.replace(/\D/g, "");
 
     // Busca o CNPJ na tabela tab_base
+    // A logo_url é vinculada ao CNPJ (matriz), então todas as empresas do mesmo CNPJ veem a mesma logo
     const query = `
       SELECT num_cnpj, nom_empresa, nom_schema as schema, logo_url
       FROM tab_base
@@ -2159,6 +2160,165 @@ app.put("/api/pedidos/sincronizar", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Erro ao sincronizar pedido",
+      error: error.message,
+    });
+  }
+});
+
+// POST /api/relatorios/pedidos-dia
+// Relatório itemizado dos pedidos de um vendedor em um dia específico,
+// usado para conferência dos pedidos enviados (sincronizados) ao outro sistema.
+app.post("/api/relatorios/pedidos-dia", async (req, res) => {
+  try {
+    const { schema, cod_empresa, usuario, data } = req.body;
+
+    if (!schema || !cod_empresa) {
+      return res.status(400).json({
+        success: false,
+        message: "Schema e código da empresa são obrigatórios",
+      });
+    }
+
+    // Função auxiliar para converter data DD/MM/YYYY para YYYY-MM-DD
+    const converterData = (dataStr) => {
+      if (!dataStr) return null;
+      const [dia, mes, ano] = dataStr.split("/");
+      return `${ano}-${mes}-${dia}`;
+    };
+
+    const dataFiltro = converterData(data) || new Date().toISOString().split("T")[0];
+
+    // 1. Verifica se o usuário é administrador (mesma regra da rota /pedidos/listar)
+    let isAdmin = false;
+    let codUsuario = null;
+
+    if (usuario) {
+      const usuarioQuery = `
+        SELECT cod_usuario
+        FROM ${schema}.tab_usuario
+        WHERE nom_operador = $1 AND ind_ativo = 'S'
+        LIMIT 1
+      `;
+      const usuarioResult = await pool.query(usuarioQuery, [usuario]);
+
+      if (usuarioResult.rows.length > 0) {
+        codUsuario = usuarioResult.rows[0].cod_usuario;
+
+        const adminQuery = `
+          SELECT cod_usuario
+          FROM ${schema}.tab_usuario_adm
+          WHERE cod_usuario = $1
+          LIMIT 1
+        `;
+        const adminResult = await pool.query(adminQuery, [codUsuario]);
+        isAdmin = adminResult.rows.length > 0;
+      }
+    }
+
+    // 2. Se NÃO for admin, verifica o parâmetro de filtro por vendedor
+    let codVendedor = null;
+    let aplicarFiltroPorOperador = false;
+
+    if (!isAdmin && usuario) {
+      const parametroQuery = `
+        SELECT val_parametro
+        FROM ${schema}.tab_parametro
+        WHERE cod_parametro = 1
+        LIMIT 1
+      `;
+      const parametroResult = await pool.query(parametroQuery);
+      const filtrarPorVendedor =
+        parametroResult.rows.length > 0 &&
+        parametroResult.rows[0].val_parametro === "S";
+
+      if (filtrarPorVendedor && codUsuario) {
+        const vendedorQuery = `
+          SELECT cod_vendedor
+          FROM ${schema}.tab_usuario
+          WHERE cod_usuario = $1
+          LIMIT 1
+        `;
+        const vendedorResult = await pool.query(vendedorQuery, [codUsuario]);
+
+        if (vendedorResult.rows.length > 0) {
+          codVendedor = vendedorResult.rows[0].cod_vendedor;
+          aplicarFiltroPorOperador = true;
+        }
+      }
+    }
+
+    // 3. Query itemizada: um item por linha, com seq_pre_venda vinculado via des_observacao4
+    let query = `
+      SELECT
+        p.seq_pedido,
+        pv.seq_pre_venda,
+        pv.num_pre_venda,
+        pe.nom_pessoa AS cliente,
+        i.num_item,
+        i.des_item AS produto,
+        i.qtd_item,
+        i.val_unitario,
+        i.val_total,
+        COALESCE(p.ind_sincronizado, 'N') AS ind_sincronizado,
+        TO_CHAR(p.dat_pedido, 'DD/MM/YYYY') AS dat_pedido,
+        p.val_total AS val_total_pedido
+      FROM ${schema}.tab_pedido_app p
+      INNER JOIN ${schema}.tab_item_pedido_app i ON i.seq_pedido = p.seq_pedido
+      LEFT JOIN ${schema}.tab_pessoa pe ON pe.cod_pessoa = p.cod_cliente
+      LEFT JOIN LATERAL (
+        SELECT tpv.seq_pre_venda, tpv.num_pre_venda
+        FROM ${schema}.tab_pre_venda tpv
+        WHERE tpv.des_observacao4 = p.seq_pedido::varchar
+        ORDER BY tpv.seq_pre_venda DESC NULLS LAST
+        LIMIT 1
+      ) pv ON true
+      WHERE p.cod_empresa = $1
+        AND p.dat_pedido = $2::date
+    `;
+
+    const params = [cod_empresa, dataFiltro];
+
+    if (aplicarFiltroPorOperador && codVendedor) {
+      query += ` AND p.cod_vendedor = $3`;
+      params.push(codVendedor);
+    }
+
+    query += ` ORDER BY p.seq_pedido DESC, i.num_item::int ASC`;
+
+    const result = await pool.query(query, params);
+
+    // 4. Resumo agregado (por pedido, não por item)
+    const pedidosUnicos = new Map();
+    for (const row of result.rows) {
+      if (!pedidosUnicos.has(row.seq_pedido)) {
+        pedidosUnicos.set(row.seq_pedido, {
+          val_total: parseFloat(row.val_total_pedido) || 0,
+          sincronizado: row.ind_sincronizado === "S",
+        });
+      }
+    }
+    const listaPedidos = Array.from(pedidosUnicos.values());
+    const resumo = {
+      data: data || dataFiltro,
+      qtd_pedidos: listaPedidos.length,
+      qtd_enviados: listaPedidos.filter((p) => p.sincronizado).length,
+      qtd_pendentes: listaPedidos.filter((p) => !p.sincronizado).length,
+      val_total_dia: listaPedidos.reduce((soma, p) => soma + p.val_total, 0),
+    };
+
+    res.json({
+      success: true,
+      message: `${result.rows.length} item(ns) encontrado(s)`,
+      data: {
+        itens: result.rows,
+        resumo,
+      },
+    });
+  } catch (error) {
+    console.error("Erro ao gerar relatório de pedidos do dia:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erro ao gerar relatório de pedidos do dia",
       error: error.message,
     });
   }
