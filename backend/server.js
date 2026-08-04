@@ -4,6 +4,10 @@ const cors = require("cors");
 const pool = require("./db");
 const app = express();
 
+// Confia no proxy do Railway para refletir corretamente req.protocol
+// (https) e req.ip a partir dos cabeçalhos X-Forwarded-*
+app.set("trust proxy", true);
+
 // Configurações do servidor
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || "0.0.0.0";
@@ -2686,8 +2690,10 @@ app.post("/api/logo/upload", async (req, res) => {
       console.log("Schema:", schema);
       console.log("Arquivo:", req.file.filename);
 
-      // Gerar URL da logo
-      const serverUrl = process.env.SERVER_PUBLIC_URL || `http://localhost:${PORT}`;
+      // Gerar URL da logo a partir do host real da requisição — evita
+      // depender de SERVER_PUBLIC_URL, que fica errado quando o mesmo
+      // banco é usado por backends diferentes (local x Railway)
+      const serverUrl = `${req.protocol}://${req.get("host")}`;
       const logoUrl = `${serverUrl}/logos/${req.file.filename}`;
 
       console.log("URL da logo:", logoUrl);
