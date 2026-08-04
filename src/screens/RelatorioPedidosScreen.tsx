@@ -43,9 +43,8 @@ export default function RelatorioPedidosScreen({
 
   const [dataInicio, setDataInicio] = useState(new Date());
   const [dataFim, setDataFim] = useState(new Date());
-  const [campoDataAtivo, setCampoDataAtivo] = useState<"inicio" | "fim" | null>(
-    null,
-  );
+  const [showDatePickerInicio, setShowDatePickerInicio] = useState(false);
+  const [showDatePickerFim, setShowDatePickerFim] = useState(false);
   const [loading, setLoading] = useState(false);
   const [exportando, setExportando] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -104,18 +103,22 @@ export default function RelatorioPedidosScreen({
     carregarRelatorio();
   };
 
-  const handleDateChange = (_event: any, date?: Date) => {
-    const campo = campoDataAtivo;
-    setCampoDataAtivo(null);
-    if (!date || !campo) return;
+  const handleDateChangeInicio = (_event: any, date?: Date) => {
+    setShowDatePickerInicio(false);
+    if (!date) return;
 
-    if (campo === "inicio") {
-      setDataInicio(date);
-      carregarRelatorio(date, dataFim);
-    } else {
-      setDataFim(date);
-      carregarRelatorio(dataInicio, date);
-    }
+    setDataInicio(date);
+    const novaFim = date > dataFim ? date : dataFim;
+    if (novaFim !== dataFim) setDataFim(novaFim);
+    carregarRelatorio(date, novaFim);
+  };
+
+  const handleDateChangeFim = (_event: any, date?: Date) => {
+    setShowDatePickerFim(false);
+    if (!date) return;
+
+    setDataFim(date);
+    carregarRelatorio(dataInicio, date);
   };
 
   const irParaHoje = () => {
@@ -148,6 +151,7 @@ export default function RelatorioPedidosScreen({
                 ${
                   idx === 0
                     ? `<td class="col-pedido" rowspan="${pedido.itens.length}">${pedido.seq_pedido}</td>
+                       <td class="col-data" rowspan="${pedido.itens.length}">${pedido.dat_pedido}</td>
                        <td class="col-prevenda" rowspan="${pedido.itens.length}">${pedido.num_pre_venda || "—"}</td>
                        <td class="col-cliente" rowspan="${pedido.itens.length}">${pedido.cliente || "-"}</td>`
                     : ""
@@ -188,6 +192,7 @@ export default function RelatorioPedidosScreen({
             th { background: #24024b; color: #fff; padding: 6px 8px; text-align: left; }
             td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
             .col-num, .col-num-total { text-align: right; }
+            .col-data { white-space: nowrap; }
             .badge { color: #fff; padding: 2px 6px; border-radius: 10px; font-size: 9px; font-weight: bold; }
             .rodape { margin-top: 20px; font-size: 9px; color: #9ca3af; text-align: right; }
           </style>
@@ -207,6 +212,7 @@ export default function RelatorioPedidosScreen({
             <thead>
               <tr>
                 <th>Pedido</th>
+                <th>Data</th>
                 <th>Pré-venda</th>
                 <th>Cliente</th>
                 <th>Produto</th>
@@ -218,7 +224,7 @@ export default function RelatorioPedidosScreen({
               </tr>
             </thead>
             <tbody>
-              ${linhasHtml || `<tr><td colspan="9" style="text-align:center; padding:20px;">Nenhum pedido encontrado</td></tr>`}
+              ${linhasHtml || `<tr><td colspan="10" style="text-align:center; padding:20px;">Nenhum pedido encontrado</td></tr>`}
             </tbody>
           </table>
 
@@ -266,17 +272,20 @@ export default function RelatorioPedidosScreen({
             Pré-venda: {item.num_pre_venda || "—"}
           </Text>
         </View>
-        <View
-          style={[
-            styles.badge,
-            item.ind_sincronizado === "S"
-              ? styles.badgeEnviado
-              : styles.badgePendente,
-          ]}
-        >
-          <Text style={styles.badgeTexto}>
-            {item.ind_sincronizado === "S" ? "Enviado" : "Pendente"}
-          </Text>
+        <View style={styles.pedidoHeaderDireita}>
+          <View
+            style={[
+              styles.badge,
+              item.ind_sincronizado === "S"
+                ? styles.badgeEnviado
+                : styles.badgePendente,
+            ]}
+          >
+            <Text style={styles.badgeTexto}>
+              {item.ind_sincronizado === "S" ? "Enviado" : "Pendente"}
+            </Text>
+          </View>
+          <Text style={styles.pedidoData}>📅 {item.dat_pedido}</Text>
         </View>
       </View>
 
@@ -355,7 +364,7 @@ export default function RelatorioPedidosScreen({
         <View style={styles.filtroData}>
           <TouchableOpacity
             style={styles.dataButton}
-            onPress={() => setCampoDataAtivo("inicio")}
+            onPress={() => setShowDatePickerInicio(true)}
           >
             <Text style={styles.dataIcon}>📅</Text>
             <Text style={styles.dataTexto}>
@@ -365,7 +374,7 @@ export default function RelatorioPedidosScreen({
           <Text style={styles.periodoSeparador}>até</Text>
           <TouchableOpacity
             style={styles.dataButton}
-            onPress={() => setCampoDataAtivo("fim")}
+            onPress={() => setShowDatePickerFim(true)}
           >
             <Text style={styles.dataIcon}>📅</Text>
             <Text style={styles.dataTexto}>{formatarDataExibicao(dataFim)}</Text>
@@ -376,13 +385,19 @@ export default function RelatorioPedidosScreen({
         </View>
 
         <CrossPlatformDatePicker
-          show={campoDataAtivo !== null}
-          value={campoDataAtivo === "fim" ? dataFim : dataInicio}
-          onChange={handleDateChange}
-          onClose={() => setCampoDataAtivo(null)}
-          title={
-            campoDataAtivo === "fim" ? "Data Final do Relatório" : "Data Inicial do Relatório"
-          }
+          show={showDatePickerInicio}
+          value={dataInicio}
+          onChange={handleDateChangeInicio}
+          onClose={() => setShowDatePickerInicio(false)}
+          title="Data Inicial do Relatório"
+        />
+        <CrossPlatformDatePicker
+          show={showDatePickerFim}
+          value={dataFim}
+          onChange={handleDateChangeFim}
+          onClose={() => setShowDatePickerFim(false)}
+          title="Data Final do Relatório"
+          minimumDate={dataInicio}
         />
 
         {/* Resumo do dia */}
@@ -582,6 +597,10 @@ const styles = StyleSheet.create({
   pedidoHeaderEsquerda: {
     flex: 1,
   },
+  pedidoHeaderDireita: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
   pedidoNumero: {
     fontSize: 16,
     fontWeight: "bold",
@@ -591,6 +610,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  pedidoData: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.textSecondary,
   },
   badge: {
     paddingHorizontal: 8,

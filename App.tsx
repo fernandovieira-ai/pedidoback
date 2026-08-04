@@ -8,6 +8,7 @@ import AddPedidoScreen from "./src/screens/AddPedidoScreen";
 import ListarPedidosScreen from "./src/screens/ListarPedidosScreen";
 import DetalhesPedidoScreen from "./src/screens/DetalhesPedidoScreen";
 import UltimaVendaScreen from "./src/screens/UltimaVendaScreen";
+import RelatorioPedidosScreen from "./src/screens/RelatorioPedidosScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -27,6 +28,10 @@ export default function App() {
         <Stack.Screen name="ListarPedidos" component={ListarPedidosScreen} />
         <Stack.Screen name="DetalhesPedido" component={DetalhesPedidoScreen} />
         <Stack.Screen name="UltimaVenda" component={UltimaVendaScreen} />
+        <Stack.Screen
+          name="RelatorioPedidos"
+          component={RelatorioPedidosScreen}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

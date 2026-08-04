@@ -45,6 +45,7 @@ export interface PedidoAgrupado {
   cliente: string;
   ind_sincronizado: string;
   val_total_pedido: number;
+  dat_pedido: string;
   itens: {
     num_item: string;
     produto: string;
@@ -126,6 +127,7 @@ export const agruparPorPedido = (
         cliente: item.cliente,
         ind_sincronizado: item.ind_sincronizado,
         val_total_pedido: item.val_total_pedido,
+        dat_pedido: item.dat_pedido,
         itens: [],
       });
     }

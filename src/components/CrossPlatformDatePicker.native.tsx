@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Modal,
   View,
@@ -28,6 +28,14 @@ export const CrossPlatformDatePicker = ({
   title = "Selecionar Data",
 }: CrossPlatformDatePickerProps) => {
   const [internalDate, setInternalDate] = useState<Date>(value);
+
+  // Resincroniza com a data atual do campo toda vez que o seletor abre —
+  // como o componente não desmonta ao fechar, o estado interno ficaria
+  // "preso" na primeira data mostrada se não repetirmos isso aqui.
+  useEffect(() => {
+    if (show) setInternalDate(value);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show]);
 
   if (!show) return null;
 
