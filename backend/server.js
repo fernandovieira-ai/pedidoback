@@ -2165,17 +2165,24 @@ app.put("/api/pedidos/sincronizar", async (req, res) => {
   }
 });
 
-// POST /api/relatorios/pedidos-dia
-// Relatório itemizado dos pedidos de um vendedor em um dia específico,
+// POST /api/relatorios/pedidos-periodo
+// Relatório itemizado dos pedidos de um vendedor em um período (data inicial e final),
 // usado para conferência dos pedidos enviados (sincronizados) ao outro sistema.
-app.post("/api/relatorios/pedidos-dia", async (req, res) => {
+app.post("/api/relatorios/pedidos-periodo", async (req, res) => {
   try {
-    const { schema, cod_empresa, usuario, data } = req.body;
+    const { schema, cod_empresa, usuario, data_inicio, data_fim } = req.body;
 
     if (!schema || !cod_empresa) {
       return res.status(400).json({
         success: false,
         message: "Schema e código da empresa são obrigatórios",
+      });
+    }
+
+    if (!data_inicio || !data_fim) {
+      return res.status(400).json({
+        success: false,
+        message: "Data inicial e data final são obrigatórias",
       });
     }
 
@@ -2186,7 +2193,9 @@ app.post("/api/relatorios/pedidos-dia", async (req, res) => {
       return `${ano}-${mes}-${dia}`;
     };
 
-    const dataFiltro = converterData(data) || new Date().toISOString().split("T")[0];
+    const hoje = new Date().toISOString().split("T")[0];
+    const dataInicioFiltro = converterData(data_inicio) || hoje;
+    const dataFimFiltro = converterData(data_fim) || hoje;
 
     // 1. Verifica se o usuário é administrador (mesma regra da rota /pedidos/listar)
     let isAdmin = false;
@@ -2273,17 +2282,17 @@ app.post("/api/relatorios/pedidos-dia", async (req, res) => {
         LIMIT 1
       ) pv ON true
       WHERE p.cod_empresa = $1
-        AND p.dat_pedido = $2::date
+        AND p.dat_pedido BETWEEN $2::date AND $3::date
     `;
 
-    const params = [cod_empresa, dataFiltro];
+    const params = [cod_empresa, dataInicioFiltro, dataFimFiltro];
 
     if (aplicarFiltroPorOperador && codVendedor) {
-      query += ` AND p.cod_vendedor = $3`;
+      query += ` AND p.cod_vendedor = $4`;
       params.push(codVendedor);
     }
 
-    query += ` ORDER BY p.seq_pedido DESC, i.num_item::int ASC`;
+    query += ` ORDER BY p.dat_pedido DESC, p.seq_pedido DESC, i.num_item::int ASC`;
 
     const result = await pool.query(query, params);
 
@@ -2299,7 +2308,8 @@ app.post("/api/relatorios/pedidos-dia", async (req, res) => {
     }
     const listaPedidos = Array.from(pedidosUnicos.values());
     const resumo = {
-      data: data || dataFiltro,
+      data_inicio: data_inicio || dataInicioFiltro,
+      data_fim: data_fim || dataFimFiltro,
       qtd_pedidos: listaPedidos.length,
       qtd_enviados: listaPedidos.filter((p) => p.sincronizado).length,
       qtd_pendentes: listaPedidos.filter((p) => !p.sincronizado).length,
@@ -2315,10 +2325,10 @@ app.post("/api/relatorios/pedidos-dia", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Erro ao gerar relatório de pedidos do dia:", error);
+    console.error("Erro ao gerar relatório de pedidos do período:", error);
     res.status(500).json({
       success: false,
-      message: "Erro ao gerar relatório de pedidos do dia",
+      message: "Erro ao gerar relatório de pedidos do período",
       error: error.message,
     });
   }
